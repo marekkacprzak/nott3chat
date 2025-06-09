@@ -41,7 +41,7 @@ This project was a collaboration between human and machine.
 ![SignalR](https://img.shields.io/badge/SignalR-realtime-F76423?style=for-the-badge)
 ![SQLite](https://img.shields.io/badge/SQLite-3-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
 
-The backend was primarily built by me, with some expert consulting from **Sonnet 4**. The goal was a lean, powerful, and scalable foundation using ASP.NET Core 8. Hoping to move to ASP.NET Core 10 soon. 
+The backend was primarily built by me, with some expert consulting from **Sonnet 4**. The goal was a lean, powerful, and scalable foundation using ASP.NET Core 8. The multi-LLM support is powered by the fantastic **[LlmTornado.Toolkit](https://github.com/lofcz/LlmTornado)** library – a huge shout-out for making the integration so seamless. Hoping to move to ASP.NET Core 10 soon. 
 
 ### Frontend
 ![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
