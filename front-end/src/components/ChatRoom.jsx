@@ -10,12 +10,10 @@ import {
   AppBar,
   Toolbar,
   Chip,
-  IconButton,
 } from '@mui/material';
 import {
   Send as SendIcon,
   ExitToApp as LogoutIcon,
-  Menu as MenuIcon,
 } from '@mui/icons-material';
 import { useSignalR } from '../hooks/useSignalR';
 import { useAuth } from '../contexts/AuthContext';
@@ -24,10 +22,10 @@ import { chatApi } from '../services/chatApi';
 import ChatMessage from './ChatMessage';
 import ChatSidebar from './ChatSidebar';
 import ModelSelector from './ModelSelector';
+import './ChatRoom.css';
 
 const ChatRoom = () => {
   const [messageInput, setMessageInput] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [pendingMessage, setPendingMessage] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
@@ -117,234 +115,139 @@ const ChatRoom = () => {
     [navigate]
   );
 
-  const toggleSidebar = useCallback(() => {
-    setSidebarOpen(!sidebarOpen);
-  }, [sidebarOpen]);
-
   return (
-    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <AppBar position="static">
-        <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            {chatId ? `Chat ${chatId.substring(0, 8)}...` : 'New Chat'}
-          </Typography>
-          {chatId && (
-            <Chip
-              label={isConnected ? 'Connected' : 'Disconnected'}
-              color={isConnected ? 'success' : 'error'}
-              variant="outlined"
-              sx={{ mr: 2, color: 'white', borderColor: 'white' }}
-            />
-          )}
-          <IconButton color="inherit" onClick={toggleSidebar} sx={{ mr: 1 }}>
-            <MenuIcon />
-          </IconButton>
-          <Button
-            color="inherit"
-            onClick={handleLogout}
-            startIcon={<LogoutIcon />}
-          >
-            Logout
-          </Button>
-        </Toolbar>
-      </AppBar>
-
-      <Box
-        sx={{
-          flex: 1,
-          display: 'flex',
-          justifyContent: 'center',
-          ml: sidebarOpen ? { md: '300px' } : 0,
-          transition: 'margin-left 0.3s ease',
-          minHeight: 0, // Allow flex child to shrink below content size
-          overflow: 'hidden',
-        }}
-      >
-        <Container
-          maxWidth="md"
-          sx={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            py: 2,
-            maxWidth: '800px',
-            height: '100%',
-            overflow: 'hidden',
-          }}
-        >
-          <Paper
-            elevation={3}
-            sx={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-              height: '100%',
-            }}
-          >
-            {/* Messages Area */}
-            <Box
-              sx={{
-                flex: 1,
-                overflowY: 'auto',
-                overflowX: 'hidden',
-                bgcolor: '#f8f9fa',
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0, // Important for flex child to be scrollable
-              }}
+    <div className="chat-room">
+      <Box className="chat-container">
+        <AppBar position="static">
+          <Toolbar>
+            <Typography variant="h6" component="div" className="app-bar-title">
+              {chatId ? `Chat ${chatId.substring(0, 8)}...` : 'New Chat'}
+            </Typography>
+            {chatId && (
+              <Chip
+                label={isConnected ? 'Connected' : 'Disconnected'}
+                color={isConnected ? 'success' : 'error'}
+                variant="outlined"
+                className="connection-chip"
+              />
+            )}
+            <Button
+              color="inherit"
+              onClick={handleLogout}
+              startIcon={<LogoutIcon />}
             >
-              {messages.length === 0 ? (
-                <Box
-                  sx={{
-                    flex: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'text.secondary',
-                  }}
-                >
-                  <Typography variant="h6">
-                    {pendingMessage
-                      ? 'Connecting to chat...'
-                      : chatId
-                        ? 'This chat is empty. Start the conversation!'
-                        : 'Start a new conversation with the assistant!'}
+              Logout
+            </Button>
+          </Toolbar>
+        </AppBar>
+
+        <Box className="main-content sidebar-open">
+          <Container maxWidth="md" className="chat-container-inner">
+            <Paper elevation={3} className="chat-paper">
+              {/* Messages Area */}
+              <Box className="messages-area">
+                {messages.length === 0 ? (
+                  <Box className="empty-state">
+                    <Typography variant="h6">
+                      {pendingMessage
+                        ? 'Connecting to chat...'
+                        : chatId
+                          ? 'This chat is empty. Start the conversation!'
+                          : 'Start a new conversation with the assistant!'}
+                    </Typography>
+                  </Box>
+                ) : (
+                  <Box className="messages-container">
+                    {messages.map((message) => (
+                      <ChatMessage key={message.id} message={message} />
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </Box>
+                )}
+              </Box>
+
+              {/* Input Area */}
+              <Box className="input-area">
+                {/* Model Selector Row */}
+                <Box className="model-selector-row">
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    className="model-label"
+                  >
+                    Model:
                   </Typography>
-                </Box>
-              ) : (
-                <Box
-                  sx={{
-                    flex: 1,
-                    py: 2,
-                    display: 'flex',
-                    flexDirection: 'column',
-                  }}
-                >
-                  {messages.map((message) => (
-                    <ChatMessage key={message.id} message={message} />
-                  ))}
-                  <div ref={messagesEndRef} />
-                </Box>
-              )}
-            </Box>
-
-            {/* Input Area */}
-            <Box
-              sx={{
-                p: 2,
-                borderTop: 1,
-                borderColor: 'divider',
-                bgcolor: 'white',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 1.5,
-              }}
-            >
-              {/* Model Selector Row */}
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  pb: 0.5,
-                  borderBottom: 1,
-                  borderColor: 'grey.200',
-                }}
-              >
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ minWidth: 'auto' }}
-                >
-                  Model:
-                </Typography>
-                <ModelSelector
-                  selectedModel={selectedModel}
-                  onModelChange={setSelectedModel}
-                  disabled={
-                    (chatId && !isConnected) ||
-                    !!currentAssistantMessage ||
-                    isCreatingChat ||
-                    !!pendingMessage
-                  }
-                />
-              </Box>
-
-              {/* Message Input Row */}
-              <Box
-                component="form"
-                onSubmit={handleSendMessage}
-                sx={{
-                  display: 'flex',
-                  gap: 1,
-                  alignItems: 'flex-end',
-                }}
-              >
-                <TextField
-                  fullWidth
-                  multiline
-                  maxRows={4}
-                  variant="outlined"
-                  placeholder={
-                    pendingMessage
-                      ? 'Connecting and sending message...'
-                      : 'Type your message... (Markdown supported)'
-                  }
-                  value={pendingMessage || messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  disabled={
-                    (chatId && !isConnected) ||
-                    !!currentAssistantMessage ||
-                    isCreatingChat ||
-                    !!pendingMessage
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage(e);
+                  <ModelSelector
+                    selectedModel={selectedModel}
+                    onModelChange={setSelectedModel}
+                    disabled={
+                      (chatId && !isConnected) ||
+                      !!currentAssistantMessage ||
+                      isCreatingChat ||
+                      !!pendingMessage
                     }
-                  }}
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 2,
-                    },
-                  }}
-                />
-                <Button
-                  type="submit"
-                  variant="contained"
-                  disabled={
-                    (chatId && !isConnected) ||
-                    !messageInput.trim() ||
-                    !!currentAssistantMessage ||
-                    isCreatingChat ||
-                    !!pendingMessage
-                  }
-                  sx={{
-                    minWidth: 'auto',
-                    px: 3,
-                    py: 1.5,
-                    borderRadius: 2,
-                    height: 'fit-content',
-                  }}
-                >
-                  <SendIcon />
-                </Button>
-              </Box>
-            </Box>
-          </Paper>
-        </Container>
-      </Box>
+                  />
+                </Box>
 
-      {/* Chat Sidebar */}
-      <ChatSidebar
-        isOpen={sidebarOpen}
-        onToggle={toggleSidebar}
-        onChatSelect={handleChatSelect}
-        currentChatId={chatId}
-      />
-    </Box>
+                {/* Message Input Row */}
+                <Box
+                  component="form"
+                  onSubmit={handleSendMessage}
+                  className="message-input-row"
+                >
+                  <TextField
+                    fullWidth
+                    multiline
+                    maxRows={4}
+                    variant="outlined"
+                    className="message-input"
+                    placeholder={
+                      pendingMessage
+                        ? 'Connecting and sending message...'
+                        : 'Type your message... (Markdown supported)'
+                    }
+                    value={pendingMessage || messageInput}
+                    onChange={(e) => setMessageInput(e.target.value)}
+                    disabled={
+                      (chatId && !isConnected) ||
+                      !!currentAssistantMessage ||
+                      isCreatingChat ||
+                      !!pendingMessage
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage(e);
+                      }
+                    }}
+                  />
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    className="send-button"
+                    disabled={
+                      (chatId && !isConnected) ||
+                      !messageInput.trim() ||
+                      !!currentAssistantMessage ||
+                      isCreatingChat ||
+                      !!pendingMessage
+                    }
+                  >
+                    <SendIcon />
+                  </Button>
+                </Box>
+              </Box>
+            </Paper>
+          </Container>
+        </Box>
+
+        {/* Chat Sidebar */}
+        <ChatSidebar
+          onChatSelect={handleChatSelect}
+          currentChatId={chatId}
+        />
+      </Box>
+    </div>
   );
 };
 

@@ -15,7 +15,9 @@ public class Program {
     public static void Main(string[] args) {
         var builder = WebApplication.CreateBuilder(args);
 
-        builder.Services.AddDbContext<AppDbContext>(opt => opt.UseInMemoryDatabase("DB"));
+        builder.Services.AddDbContext<AppDbContext>(opt =>
+                    // opt.UseInMemoryDatabase("DB"));
+                    opt.UseSqlite("Data Source=databse.dat"));
 
         builder.Services.AddMemoryCache();
         builder.Services.AddAuthentication();

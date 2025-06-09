@@ -1,0 +1,126 @@
+/* ChatRoom styles */
+
+.chat-room .chat-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-room .app-bar-title {
+  flex-grow: 1;
+}
+
+.chat-room .connection-chip {
+  margin-right: 16px;
+  color: white;
+  border-color: white;
+}
+
+.chat-room .menu-button {
+  margin-right: 8px;
+}
+
+.chat-room .main-content {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+  transition: margin-left 0.3s ease;
+}
+
+.chat-room .main-content.sidebar-open {
+  margin-left: 300px;
+}
+
+@media (max-width: 899px) {
+  .chat-room .main-content.sidebar-open {
+    margin-left: 0;
+  }
+}
+
+.chat-room .chat-container-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding-top: 16px;
+  padding-bottom: 16px;
+  max-width: 800px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.chat-room .chat-paper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+
+.chat-room .messages-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background-color: #f8f9fa;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.chat-room .empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.chat-room .messages-container {
+  flex: 1;
+  padding-top: 16px;
+  padding-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-room .input-area {
+  padding: 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
+  background-color: white;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-room .model-selector-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.chat-room .model-label {
+  min-width: auto;
+}
+
+.chat-room .message-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.chat-room .message-input .MuiOutlinedInput-root {
+  border-radius: 8px;
+}
+
+.chat-room .send-button {
+  min-width: auto;
+  padding-left: 24px;
+  padding-right: 24px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  border-radius: 8px;
+  height: fit-content;
+}
