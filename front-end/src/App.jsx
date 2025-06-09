@@ -1,0 +1,108 @@
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from 'react-router-dom';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { CssBaseline } from '@mui/material';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ChatProvider } from './contexts/ChatContext';
+import LoginPage from './components/LoginPage';
+import ChatRoom from './components/ChatRoom';
+import ProtectedRoute from './components/ProtectedRoute';
+
+const theme = createTheme({
+  palette: {
+    mode: 'light',
+    primary: {
+      main: '#2563eb',
+      contrastText: '#ffffff',
+    },
+    secondary: {
+      main: '#7c3aed',
+    },
+    background: {
+      default: '#f8fafc',
+      paper: '#ffffff',
+    },
+    grey: {
+      50: '#f8fafc',
+      100: '#f1f5f9',
+      200: '#e2e8f0',
+    },
+  },
+  typography: {
+    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+  },
+  components: {
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          textTransform: 'none',
+          fontWeight: 600,
+        },
+      },
+    },
+    MuiTextField: {
+      styleOverrides: {
+        root: {
+          '& .MuiOutlinedInput-root': {
+            borderRadius: 12,
+          },
+        },
+      },
+    },
+  },
+});
+
+const AppRoutes = () => {
+  const { isAuthenticated } = useAuth();
+
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          isAuthenticated ? <Navigate to="/chat" replace /> : <LoginPage />
+        }
+      />
+      <Route
+        path="/chat"
+        element={
+          <ProtectedRoute>
+            <ChatProvider>
+              <ChatRoom />
+            </ChatProvider>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/chat/:chatId"
+        element={
+          <ProtectedRoute>
+            <ChatProvider>
+              <ChatRoom />
+            </ChatProvider>
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/" element={<Navigate to="/chat" replace />} />
+    </Routes>
+  );
+};
+
+const App = () => {
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <AuthProvider>
+        <Router>
+          <AppRoutes />
+        </Router>
+      </AuthProvider>
+    </ThemeProvider>
+  );
+};
+
+export default App;
