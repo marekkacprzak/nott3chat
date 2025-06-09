@@ -1,6 +1,6 @@
 ﻿# NotT3Chat: The C# Answer to the T3 Stack
 
- <img src="stuff/logo.png" width="175" />
+ <img src="stuff/logo.png" width="350" />
 
 
 Welcome to **NotT3Chat**, a fully-featured, real-time chat application built for the [cloneathon.t3.chat](https://cloneathon.t3.chat). This project serves as a testament to the raw power and elegance of C# and ASP.NET Core, proving that you don't need TypeScript to build amazing, modern web applications. (Sorry, Theo.)
