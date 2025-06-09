@@ -122,6 +122,7 @@ Here's a non-exhaustive list of what's planned when I get around to it:
 - [ ] Intelligent, automatic naming for new chats
 - [ ] Search through threads
 - [ ] Make it prettier?
+- [ ] Thinking models
 
 ---
 
