@@ -149,6 +149,7 @@ To maintain sanity without TypeScript, we follow a few simple styling rules:
 - [ ] Abstract the database context to easily switch between providers (In-Memory, SQLite, PostgreSQL, etc.).
 - [ ] Consider segmenting larger UI components into smaller, more focused ones.
 - [ ] Add an easy way to specify a default user account via environment variables for local development.
+- [ ] Logging
 
 ---
 
