@@ -64,7 +64,6 @@ public class Program {
         builder.Services.AddSingleton<TorandoService>();
 
         var app = builder.Build();
-#if DEBUG
         // Initialize database and create admin user
         using (var scope = app.Services.CreateScope()) {
             var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -72,10 +71,11 @@ public class Program {
 
             context.Database.EnsureCreated();
 
+#if DEBUG
             var adminUser = new NotT3User { UserName = "admin@example.com", Email = "admin@example.com" };
             userManager.CreateAsync(adminUser, "admin").Wait();
-        }
 #endif
+        }
 
         app.UseRouting();
         app.UseCors("DynamicCorsPolicy");
