@@ -46,6 +46,20 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  const register = useCallback(async (email, password) => {
+    try {
+      await api.post('/register', { email, password });
+      // After successful registration, log the user in
+      const loginResult = await login(email, password);
+      return loginResult;
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Registration failed',
+      };
+    }
+  }, [login]);
+
   const logout = useCallback(async () => {
     try {
       await api.post('/logout');
@@ -65,6 +79,7 @@ export const AuthProvider = ({ children }) => {
     loading,
     login,
     logout,
+    register,
     checkAuth,
   };
 

@@ -7,7 +7,7 @@
 }
 
 .model-selector .form-control {
-  width: 220px;
+  width: 250px;
 }
 
 .model-selector .select-root {
@@ -103,27 +103,28 @@
   flex: 1;
 }
 
-.model-selector .menu-item {
+.MuiMenuItem-root .menu-item {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 12px;
   width: 100%;
 }
 
-.model-selector .menu-item-icon {
+.menu-item .menu-item-icon {
   display: flex;
   align-items: center;
   font-size: 18px;
 }
 
-.model-selector .menu-item-content {
+.menu-item .menu-item-content {
   flex: 1;
 }
 
-.model-selector .menu-item-title {
+.menu-item .menu-item-title {
   font-weight: 500;
 }
 
-.model-selector .menu-item-provider {
+.menu-item .menu-item-provider {
   color: rgba(0, 0, 0, 0.6);
 }

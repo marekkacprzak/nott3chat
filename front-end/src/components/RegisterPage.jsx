@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Box,
@@ -10,23 +10,46 @@ import {
   Alert,
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
-import './LoginPage.css';
+import './RegisterPage.css';
 
-const LoginPage = () => {
+const RegisterPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { register, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/chat');
+    }
+  }, [isAuthenticated, navigate]);
+
+  // Check if passwords match whenever either password field changes
+  const passwordsMatch = useMemo(() => !confirmPassword || password === confirmPassword, [password, confirmPassword]);
+  
   const handleSubmit = useCallback(
     async (e) => {
       e.preventDefault();
+      
+      // Client-side validation
+      if (!email || !password || !confirmPassword) {
+        setError('All fields are required');
+        return;
+      }
+      
+      if (!passwordsMatch) {
+        setError('Passwords do not match');
+        return;
+      }
+
       setError('');
       setLoading(true);
 
-      const result = await login(email, password);
+      const result = await register(email, password);
 
       if (result.success) {
         navigate('/chat');
@@ -36,16 +59,16 @@ const LoginPage = () => {
 
       setLoading(false);
     },
-    [email, password, login, navigate]
+    [email, password, confirmPassword, passwordsMatch, register, navigate]
   );
 
   return (
-    <div className="login-page">
+    <div className="register-page">
       <Container component="main" maxWidth="xs">
         <Box className="main-container">
-          <Paper elevation={3} className="login-paper">
+          <Paper elevation={3} className="register-paper">
             <Typography component="h1" variant="h4" align="center" gutterBottom>
-              Login
+              Register
             </Typography>
 
             {error && (
@@ -57,7 +80,7 @@ const LoginPage = () => {
             <Box
               component="form"
               onSubmit={handleSubmit}
-              className="login-form"
+              className="register-form"
             >
               <TextField
                 margin="normal"
@@ -79,31 +102,45 @@ const LoginPage = () => {
                 label="Password"
                 type="password"
                 id="password"
-                autoComplete="current-password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+              />
+              <TextField
+                margin="normal"
+                required
+                fullWidth
+                name="confirmPassword"
+                label="Confirm Password"
+                type="password"
+                id="confirmPassword"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                error={!passwordsMatch}
+                helperText={!passwordsMatch ? "Passwords don't match" : ''}
               />
               <Button
                 type="submit"
                 fullWidth
                 variant="contained"
                 className="submit-button"
-                disabled={loading}
+                disabled={loading || !passwordsMatch}
               >
-                {loading ? 'Signing In...' : 'Sign In'}
+                {loading ? 'Registering...' : 'Register'}
               </Button>
               
               <Box textAlign="center" mt={2}>
                 <Typography variant="body2">
-                  Don't have an account?{' '}
+                  Already have an account?{' '}
                   <Button
                     component={Link}
-                    to="/register"
+                    to="/login"
                     color="primary"
                     size="small"
                     sx={{ textTransform: 'none' }}
                   >
-                    Register here
+                    Login here
                   </Button>
                 </Typography>
               </Box>
@@ -115,4 +152,4 @@ const LoginPage = () => {
   );
 };
 
-export default LoginPage;
+export default RegisterPage;

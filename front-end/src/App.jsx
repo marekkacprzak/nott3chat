@@ -11,6 +11,7 @@ import { ChatProvider } from './contexts/ChatContext';
 import LoginPage from './components/LoginPage';
 import ChatRoom from './components/ChatRoom';
 import ProtectedRoute from './components/ProtectedRoute';
+import RegisterPage from './components/RegisterPage';
 
 const theme = createTheme({
   palette: {
@@ -65,6 +66,12 @@ const AppRoutes = () => {
         path="/login"
         element={
           isAuthenticated ? <Navigate to="/chat" replace /> : <LoginPage />
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          isAuthenticated ? <Navigate to="/chat" replace /> : <RegisterPage />
         }
       />
       <Route
