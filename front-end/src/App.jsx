@@ -1,8 +1,10 @@
+import React from 'react';
 import {
   BrowserRouter as Router,
   Routes,
   Route,
   Navigate,
+  useNavigate,
 } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
@@ -12,6 +14,7 @@ import LoginPage from './components/LoginPage';
 import ChatRoom from './components/ChatRoom';
 import ProtectedRoute from './components/ProtectedRoute';
 import RegisterPage from './components/RegisterPage';
+import { setNavigate } from './services/navigationService';
 
 const theme = createTheme({
   palette: {
@@ -59,6 +62,12 @@ const theme = createTheme({
 
 const AppRoutes = () => {
   const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  
+  // Initialize navigation service with React Router's navigate function
+  React.useEffect(() => {
+    setNavigate(navigate);
+  }, [navigate]);
 
   return (
     <Routes>

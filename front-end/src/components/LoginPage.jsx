@@ -93,15 +93,15 @@ const LoginPage = () => {
                 {loading ? 'Signing In...' : 'Sign In'}
               </Button>
               
-              <Box textAlign="center" mt={2}>
+              <Box className="account-link-container">
                 <Typography variant="body2">
-                  Don't have an account?{' '}
+                  Don&apos;t have an account?{' '}
                   <Button
                     component={Link}
                     to="/register"
                     color="primary"
                     size="small"
-                    sx={{ textTransform: 'none' }}
+                    className="account-link"
                   >
                     Register here
                   </Button>

@@ -67,9 +67,10 @@ The backend runs on port `http://localhost:5128` by default in debug mode.
 
 **Debug Mode:**
 ```bash
-# From the root directory
-export GOOGLE_API_KEY=...
-export OAI_API_KEY=...
+# From the root directory - specify whichever ones are relevant. Options are GOOGLE_API_KEY, OAI_API_KEY, ANTHROPIC_API_KEY, COHERE_API_KEY, GROQ_API_KEY, DEEPSEEK_API_KEY, MISTRAL_API_KEY, XAI_API_KEY, PERPLEXITY_API_KEY
+export XXXXXX_API_KEY=...
+# If you don't specify this, it will display all the available models from the providers that you specified an API key for
+export NOTT3CHAT_MODELS_FILTER=gpt-4o-mini,gemini-2.0-flash-001,gemini-2.0-flash-lite-001
 dotnet run --project backend/NotT3ChatBackend.csproj
 ```
 > **Note:** The first time you run this, it will create a `databse.dat` SQLite file. When running in debug it will seed it with a default user:
@@ -131,7 +132,7 @@ Here's a non-exhaustive list of what's planned when I get around to it:
 Some notes on the current state of the codebase for aspiring contributors.
 
 ### Backend Philosophy
-The backend is currently in a single `Program.cs` file. This is an intentional experiment in anticipation of .NET 10's enhanced support for single-file applications (`dotnet run app.cs`). We are considering splitting it into a more traditional file structure for clarity as it grows. It's a WIP!
+The backend is currently in a single `Program.cs` file. This is an intentional experiment in anticipation of .NET 10's enhanced support for single-file applications (`dotnet run app.cs`). We are going to split it into a more traditional file structure for clarity soon. It's a WIP!
 
 ### Frontend Styling Rules
 To maintain sanity without TypeScript, we follow a few simple styling rules:
@@ -144,12 +145,12 @@ To maintain sanity without TypeScript, we follow a few simple styling rules:
 ### Technical To-Do List
 
 - [ ] Graceful error handling (e.g., 429 Too Many Requests, content filter blocks).
-- [ ] Better documentation for required environment variables (`GOOGLE_API_KEY`, `OAI_API_KEY`).
-- [ ] Streamline adding new models via environment variables instead of code changes.
+- [v] Streamline adding new models via environment variables instead of code changes.
 - [ ] Abstract the database context to easily switch between providers (In-Memory, SQLite, PostgreSQL, etc.).
 - [ ] Consider segmenting larger UI components into smaller, more focused ones.
 - [ ] Add an easy way to specify a default user account via environment variables for local development.
-- [ ] Logging
+- [v] Logging
+- [ ] Move to redis for distributed cache for better synchronization & locking for actively streaming chats.
 
 ---
 

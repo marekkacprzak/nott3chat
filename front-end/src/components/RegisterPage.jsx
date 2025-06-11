@@ -130,7 +130,7 @@ const RegisterPage = () => {
                 {loading ? 'Registering...' : 'Register'}
               </Button>
               
-              <Box textAlign="center" mt={2}>
+              <Box className="account-link-container">
                 <Typography variant="body2">
                   Already have an account?{' '}
                   <Button
@@ -138,7 +138,7 @@ const RegisterPage = () => {
                     to="/login"
                     color="primary"
                     size="small"
-                    sx={{ textTransform: 'none' }}
+                    className="account-link"
                   >
                     Login here
                   </Button>

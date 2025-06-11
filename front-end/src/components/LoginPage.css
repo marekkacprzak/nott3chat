@@ -24,3 +24,12 @@
   margin-top: 24px;
   margin-bottom: 16px;
 }
+
+.login-page .account-link-container {
+  text-align: center;
+  margin-top: 16px;
+}
+
+.login-page .account-link {
+  text-transform: none;
+}

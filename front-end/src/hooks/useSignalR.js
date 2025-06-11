@@ -1,6 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import * as signalR from '@microsoft/signalr';
 
+const serverMessageToLocal = (serverMsg) => ({
+  id: serverMsg.id,
+  index: serverMsg.index,
+  type: serverMsg.role,
+  content: serverMsg.content,
+  timestamp: new Date(serverMsg.timestamp),
+  isComplete: true,
+});
+
 export const useSignalR = (chatId) => {
   const [connection, setConnection] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -80,36 +89,18 @@ export const useSignalR = (chatId) => {
         setIsConnected(true);
 
         connection.on('ConversationHistory', (messages) => {
-          setMessages(
-            messages.map((msg) => ({
-              id: Date.now() + Math.random(),
-              index: msg.index,
-              type: msg.role,
-              content: msg.content,
-              timestamp: new Date(msg.timestamp),
-              isComplete: true,
-            }))
-          );
+          setMessages(messages.map((msg) => serverMessageToLocal(msg)));
         });
 
         // Handle user messages
-        connection.on('UserMessage', (message, dateUtc) => {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: Date.now() + Math.random(),
-              type: 'user',
-              content: message,
-              timestamp: new Date(dateUtc),
-              isComplete: true,
-            },
-          ]);
+        connection.on('UserMessage', (message) => {
+          setMessages((prev) => [...prev, serverMessageToLocal(message)]);
         });
 
         // Begin assistant message
-        connection.on('BeginAssistantMessage', (dateUtc) => {
+        connection.on('BeginAssistantMessage', (dateUtc, id) => {
           const newMessage = {
-            id: Date.now() + Math.random(),
+            id,
             type: 'assistant',
             content: '',
             timestamp: new Date(dateUtc),

@@ -9,319 +9,502 @@ using System.Text;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using System.ComponentModel.DataAnnotations;
+using Serilog;
+using NotT3ChatBackend.Data;
+using NotT3ChatBackend.Models;
+using NotT3ChatBackend.Services;
+using NotT3ChatBackend.Hubs;
+using NotT3ChatBackend.DTOs;
+using Microsoft.AspNetCore.Http.HttpResults;
+using NotT3ChatBackend.Endpoints;
+using LlmTornado.Code.Models;
+using NotT3ChatBackend.Utils;
 
-namespace NotT3ChatBackend;
-public class Program {
-    public static void Main(string[] args) {
-        var builder = WebApplication.CreateBuilder(args);
+// This code is staying in one file for now as an intentional experiment for .NET 10's dotnet run app.cs feature,
+// but we are aware of the importance of separating so we are currently assigning regions to be split when the time is right.
 
-        builder.Services.AddDbContext<AppDbContext>(opt =>
-                    // opt.UseInMemoryDatabase("DB"));
-                    opt.UseSqlite("Data Source=databse.dat"));
+namespace NotT3ChatBackend {
 
-        builder.Services.AddMemoryCache();
-        builder.Services.AddAuthentication();
-        builder.Services.AddAuthorization();
-        builder.Services.AddEndpointsApiExplorer();
+    #region Program.cs
+    public class Program {
+        public static void Main(string[] args) {
+            var builder = WebApplication.CreateBuilder(args);
 
-        // Add CORS services
-        builder.Services.AddCors(options => {
-            // Dynamic policy for specific routes (initially permissive, will be restricted in middleware)
-            options.AddPolicy("DynamicCorsPolicy", policy => {
-                policy.SetIsOriginAllowed(_ => true)
-                    .AllowAnyHeader()
-                    .AllowAnyMethod()
-                    .AllowCredentials();
+            // Configure Serilog
+            Log.Logger = new LoggerConfiguration()
+                .WriteTo.Console()
+                //.WriteTo.File("logs/app.log", rollingInterval: RollingInterval.Day)
+                .CreateLogger();
+
+            builder.Host.UseSerilog();
+
+            builder.Services.AddDbContext<AppDbContext>(opt =>
+                        // opt.UseInMemoryDatabase("DB"));
+                        opt.UseSqlite("Data Source=databse.dat"));
+
+            builder.Services.AddMemoryCache();
+            builder.Services.AddAuthentication();
+            builder.Services.AddAuthorization();
+            builder.Services.AddEndpointsApiExplorer();
+
+            // Add CORS services
+            builder.Services.AddCors(options => {
+                // This is OSS project, feel free to update this for your own use-cases
+                options.AddPolicy("OpenCorsPolicy", policy => {
+                    policy.SetIsOriginAllowed(_ => true)
+                        .AllowAnyHeader()
+                        .AllowAnyMethod()
+                        .AllowCredentials();
+                });
             });
-        });
 
-        builder.Services.AddIdentityApiEndpoints<NotT3User>()
-                    .AddRoles<IdentityRole>()
-                    .AddEntityFrameworkStores<AppDbContext>()
-                    .AddDefaultTokenProviders();
+            builder.Services.AddIdentityApiEndpoints<NotT3User>()
+                        .AddRoles<IdentityRole>()
+                        .AddEntityFrameworkStores<AppDbContext>()
+                        .AddDefaultTokenProviders();
 
-        builder.Services.ConfigureApplicationCookie(options => {
-            if (builder.Environment.IsProduction()) {
-                options.Cookie.SameSite = SameSiteMode.None;
-                options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-            }
-            options.Cookie.HttpOnly = true;
-            options.SlidingExpiration = true;
-            options.ExpireTimeSpan = TimeSpan.FromDays(1);
-        });
+            builder.Services.ConfigureApplicationCookie(options => {
+                if (builder.Environment.IsProduction()) {
+                    options.Cookie.SameSite = SameSiteMode.None;
+                    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+                }
+                options.Cookie.HttpOnly = true;
+                options.SlidingExpiration = true;
+                options.ExpireTimeSpan = TimeSpan.FromDays(1);
+            });
 
-        builder.Services.Configure<IdentityOptions>(options => {
-            options.SignIn.RequireConfirmedEmail = false; // If we are skipping, we don't need to confirm email
-            options.User.RequireUniqueEmail = true;
-            options.Password.RequireNonAlphanumeric = false;
-            options.Password.RequireDigit = false;
-            options.Password.RequiredLength = 5;
-            options.Password.RequireLowercase = false;
-            options.Password.RequireUppercase = false;
-        });
+            builder.Services.Configure<IdentityOptions>(options => {
+                // This is OSS project, feel free to update this for your own use-cases
+                options.SignIn.RequireConfirmedEmail = false;
+                options.User.RequireUniqueEmail = true;
+                options.Password.RequireNonAlphanumeric = false;
+                options.Password.RequireDigit = false;
+                options.Password.RequiredLength = 5;
+                options.Password.RequireLowercase = false;
+                options.Password.RequireUppercase = false;
+            });
 
-        builder.Services.AddSignalR();
-        builder.Services.AddSingleton<TorandoService>();
+            builder.Services.AddSignalR();
+            builder.Services.AddSingleton<TornadoService>();
 
-        var app = builder.Build();
-        // Initialize database and create admin user
-        using (var scope = app.Services.CreateScope()) {
-            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<NotT3User>>();
+            var app = builder.Build();
 
-            context.Database.EnsureCreated();
+            // Initialize database and create admin user
+            using (var scope = app.Services.CreateScope()) {
+                var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var userManager = scope.ServiceProvider.GetRequiredService<UserManager<NotT3User>>();
+
+                context.Database.EnsureCreated();
 
 #if DEBUG
-            var adminUser = new NotT3User { UserName = "admin@example.com", Email = "admin@example.com" };
-            userManager.CreateAsync(adminUser, "admin").Wait();
+                Log.Information("Creating debug admin user");
+                var adminUser = new NotT3User { UserName = "admin@example.com", Email = "admin@example.com" };
+                var result = userManager.CreateAsync(adminUser, "admin").Result;
+                if (result.Succeeded)
+                    Log.Information("Admin user created successfully");
+                else
+                    Log.Warning("Failed to create admin user: {Errors}", string.Join(", ", result.Errors.Select(e => e.Description)));
 #endif
+            }
+
+            Log.Information("Configuring HTTP pipeline");
+            app.UseRouting();
+            app.UseCors("OpenCorsPolicy");
+
+            // Configure the HTTP request pipeline.
+            app.UseAuthentication();
+            app.UseAuthorization();
+
+            Log.Information("Mapping endpoints");
+
+            app.MapGet("/health", () => TypedResults.Ok());
+            app.MapIdentityApi<NotT3User>();
+            app.MapModelEndpoints();
+            app.MapChatEndpoints();
+
+            app.Run();
+        }
+    }
+}
+#endregion
+
+namespace NotT3ChatBackend.Endpoints {
+    #region Endpoints/ChatEndpoints.cs
+    public class ChatEndpointsMarker;
+    public static class ChatEndpoints {
+        public static void MapChatEndpoints(this IEndpointRouteBuilder app) {
+            app.MapHub<ChatHub>("/chat/{conversationId}").RequireAuthorization();
+            app.MapPost("/chats/new", NewChat).RequireAuthorization();
+            app.MapGet("/chats", GetChats).RequireAuthorization();
         }
 
-        app.UseRouting();
-        app.UseCors("DynamicCorsPolicy");
-
-        // Configure the HTTP request pipeline.
-        app.UseAuthentication();
-        app.UseAuthorization();
-
-        app.MapGet("/health", () => TypedResults.Ok());
-        app.MapIdentityApi<NotT3User>();
-        app.MapHub<ChatHub>("/chat/{conversationId}").RequireAuthorization();
-        app.MapPost("/chats/new", async (AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager) => {
-            var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
-            var convo = await dbContext.CreateConversationAsync(user);
-
-            return TypedResults.Ok(new NotT3ConversationDTO(convo));
-        }).RequireAuthorization();
-        app.MapGet("/chats", async (AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager) => {
-            var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
-            await dbContext.Entry(user).Collection(u => u.Conversations).LoadAsync();
-
-            return TypedResults.Ok(user.Conversations.OrderByDescending(c => c.CreatedAt)
-                                                    .Select(c => new NotT3ConversationDTO(c)).ToList());
-        }).RequireAuthorization();
-        app.MapGet("/models", (TorandoService torandoService) => {
-            // Return the available models
-            return TypedResults.Ok(torandoService.GetAvailableModels());
-        });
-
-        app.Run();
-    }
-}
-
-public class TorandoService {
-    private readonly TornadoApi _api;
-    private readonly ChatModel[] _models;
-
-    public TorandoService() {
-        var providerAuthentications = new List<ProviderAuthentication>();
-        if (Environment.GetEnvironmentVariable("GOOGLE_API_KEY") is string googleApiKey && !string.IsNullOrEmpty(googleApiKey))
-            providerAuthentications.Add(new ProviderAuthentication(LLmProviders.Google, googleApiKey));
-        if (Environment.GetEnvironmentVariable("OAI_API_KEY") is string oaiApiKey && !string.IsNullOrEmpty(oaiApiKey))
-            providerAuthentications.Add(new ProviderAuthentication(LLmProviders.OpenAi, oaiApiKey));
-
-        _api = new TornadoApi(providerAuthentications);
-        _models = [ChatModel.OpenAi.Gpt4.OMini, ChatModel.Google.Gemini.Gemini2Flash001];
-    }
-
-    public ICollection<ChatModelDTO> GetAvailableModels() {
-        // Return the models that are available
-        return _models.Select(m => new ChatModelDTO(m)).ToList();
-    }
-
-    public async Task InitiateConversationAsync(string model, ICollection<NotT3Message> messages, ChatStreamEventHandler handler) {
-        var convo = _api.Chat.CreateConversation(model);
-        foreach (var msg in messages)
-            convo.AppendMessage(msg.Role, msg.Content);
-        await convo.StreamResponseRich(handler);
-    }
-
-}
-
-public record ChatModelDTO(string Name, string Provider) {
-    public ChatModelDTO(ChatModel model) : this(model.Name, model.Provider.ToString()) {
-        // This is a simple DTO, so we don't need to do anything else
-    }
-}
-
-public class ChatHub : Hub {
-    private readonly TorandoService _torandoService;
-    private readonly AppDbContext _dbContext;
-    private readonly UserManager<NotT3User> _userManager;
-    private readonly IMemoryCache _memoryCache;
-    public ChatHub(TorandoService torandoService, AppDbContext dbContext, UserManager<NotT3User> userManager, IMemoryCache memoryCache) {
-        _torandoService = torandoService;
-        _dbContext = dbContext;
-        _userManager = userManager;
-        _memoryCache = memoryCache;
-    }
-
-    public override async Task OnConnectedAsync() {
-
-        string convoId = Context.GetHttpContext()!.Request.RouteValues["conversationId"]!.ToString()!;
-        var user = await _userManager.GetUserAsync(Context.User ?? throw new NotImplementedException());
-
-        // It must be an existing conversation - retrieve it and send the existing messages
-        var conversation = await _dbContext.GetConversationAsync(convoId, user!);
-        await _dbContext.Entry(conversation).Collection(c => c.Messages).LoadAsync();
-
-        // Send out the messages
-        await Clients.Client(Context.ConnectionId).SendAsync("ConversationHistory", conversation.Messages.OrderBy(m => m.Index).Select(m => new NotT3MessageDTO(m)).ToList());
-
-        // TODO: consider race condition?
-        // Check if we're in the middle of a message
-        if (conversation.IsStreaming) {
-
-            if (_memoryCache.TryGetValue(convoId, out StreamingMessage? currentMsg)) {
-                await currentMsg!.semaphore.WaitAsync();
-                try {
-                    await Clients.Client(Context.ConnectionId).SendAsync("BeginAssistantMessage", DateTime.UtcNow.ToString()); // Store that in the cache too?
-                    await Clients.Client(Context.ConnectionId).SendAsync("NewAssistantPart", currentMsg.sbMessage.ToString());
-                    await Groups.AddToGroupAsync(Context.ConnectionId, convoId);
-                }
-                finally {
-                    currentMsg.semaphore.Release();
-                }
+        public static async Task<Ok<List<NotT3ConversationDTO>>> GetChats(AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger) {
+            logger.LogInformation("Retrieving conversations for user");
+            try {
+                var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
+                await dbContext.Entry(user).Collection(u => u.Conversations).LoadAsync();
+                var conversations = user.Conversations.OrderByDescending(c => c.CreatedAt)
+                                                      .Select(c => new NotT3ConversationDTO(c)).ToList();
+                logger.LogInformation("Retrieved {Count} conversations for user", conversations.Count);
+                return TypedResults.Ok(conversations);
             }
-        } else {
-            await Groups.AddToGroupAsync(Context.ConnectionId, convoId);
+            catch (Exception ex) {
+                logger.LogError(ex, "Error retrieving conversations");
+                throw;
+            }
+        }
+        
+        public static async Task<Ok<NotT3ConversationDTO>> NewChat(AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger) {
+            logger.LogInformation("Creating new conversation for user");
+            try {
+                var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
+                var convo = await dbContext.CreateConversationAsync(user);
+                logger.LogInformation("New conversation created with ID: {ConversationId}", convo.Id);
+                return TypedResults.Ok(new NotT3ConversationDTO(convo));
+            }
+            catch (Exception ex) {
+                logger.LogError(ex, "Error creating new conversation");
+                throw;
+            }
+        }
+    }
+    #endregion
+
+    #region Endpoints/ModelEndpoints.cs
+
+    public class ModelEndpointsMarker;
+    public static class ModelEndpoints {
+        public static void MapModelEndpoints(this IEndpointRouteBuilder app) {
+            app.MapGet("/models", GetAvailableModels);
         }
 
-        await base.OnConnectedAsync();
+        public static Ok<ICollection<ChatModelDTO>> GetAvailableModels(TornadoService tornadoService, ILogger<ModelEndpointsMarker> logger) {
+            var models = tornadoService.GetAvailableModels();
+            logger.LogInformation("Retrieved {Count} available models", models.Count);
+            return TypedResults.Ok(models);
+        }
     }
-
-    public async Task NewMessage(string model, string message) {
-        string? convoId = Context.GetHttpContext()!.Request.RouteValues["conversationId"]!.ToString()!;
-        var user = await _userManager.GetUserAsync(Context.User ?? throw new NotImplementedException());
-        var convo = await _dbContext.GetConversationAsync(convoId, user!);
-            
-        if (convo.IsStreaming)
-            throw new BadHttpRequestException("Conversation is already streaming, can't create a new message");
-
-        // Load in the messages
-        await _dbContext.Entry(convo).Collection(c => c.Messages).LoadAsync();
-        convo.Messages.Sort((a, b) => a.Index.CompareTo(b.Index));
-
-        // Add in the new one
-        var time = DateTime.UtcNow;
-        _dbContext.Messages.Add(new NotT3Message() {
-            Index = convo.Messages.Count,
-            Role = ChatMessageRoles.User,
-            Content = message,
-            Timestamp = time,
-            ConversationId = convo.Id,
-            UserId = user!.Id
-        });
-
-        convo.IsStreaming = true;
-        await _dbContext.SaveChangesAsync();
-
-        // Send out the user & assistnat messages
-        await Clients.Group(convoId).SendAsync("UserMessage", message, time.ToString());
-        await Clients.Group(convoId).SendAsync("BeginAssistantMessage", time.ToString());
-
-        var streamingMessage = new StreamingMessage(new StringBuilder(), new SemaphoreSlim(1));
-        _memoryCache.Set(convoId, streamingMessage, TimeSpan.FromMinutes(5)); // Max expiration of 5 minutes
-            
-        // Create our conversation
-        await _torandoService.InitiateConversationAsync(model, convo.Messages, new ChatStreamEventHandler() {
-            MessagePartHandler = async (messagePart) => {
-                await streamingMessage.semaphore.WaitAsync();
-                try {
-                    streamingMessage.sbMessage.Append(messagePart.Text);
-                    await Clients.Group(convoId).SendAsync("NewAssistantPart", messagePart.Text);
-                }
-                finally {
-                    streamingMessage.semaphore.Release();
-                }
-            },
-            OnFinished = async (data) => {
-                await Clients.Group(convoId).SendAsync("EndAssistantMessage");
-
-                _dbContext.Messages.Add(new NotT3Message() {
-                    Index = convo.Messages.Count,
-                    Role = ChatMessageRoles.Assistant,
-                    Content = streamingMessage.sbMessage.ToString(),
-                    Timestamp = time,
-                    ConversationId = convo.Id,
-                    UserId = user!.Id
-                });
-                convo.IsStreaming = false;
-                await _dbContext.SaveChangesAsync();
-
-                _memoryCache.Set(convoId, streamingMessage, TimeSpan.FromMinutes(1));
-            }
-        });
-    }
-
+    #endregion
 }
 
-record StreamingMessage(StringBuilder sbMessage, SemaphoreSlim semaphore);
+namespace NotT3ChatBackend.Services {
+    #region Services/TorandoService.cs
+    public class TornadoService {
+        private readonly TornadoApi _api;
+        private readonly string[] _models;
+        private readonly ILogger<TornadoService> _logger;
 
-public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbContext<NotT3User>(options) {
+        public TornadoService(ILogger<TornadoService> logger) {
+            _logger = logger;
+            var providerAuthentications = new List<ProviderAuthentication>();
+            var allModels = new List<string>();
+            foreach (var (envKey, provider, vendorProvider) in new (string, LLmProviders, BaseVendorModelProvider)[] {
+                ("GOOGLE_API_KEY", LLmProviders.Google, ChatModel.Google),
+                ("OAI_API_KEY", LLmProviders.OpenAi, ChatModel.OpenAi),
+                ("ANTHROPIC_API_KEY", LLmProviders.Anthropic, ChatModel.Anthropic),
+                // ("AZURE_OAI_API_KEY", LLmProviders.AzureOpenAi, ChatModel.OpenAi), // Figure out how this conflicts with OpenAi
+                ("COHERE_API_KEY", LLmProviders.Cohere, ChatModel.Cohere),
+                ("GROQ_API_KEY", LLmProviders.Groq, ChatModel.Groq),
+                ("DEEPSEEK_API_KEY", LLmProviders.DeepSeek, ChatModel.DeepSeek),
+                ("MISTRAL_API_KEY", LLmProviders.Mistral, ChatModel.Mistral),
+                ("XAI_API_KEY", LLmProviders.XAi, ChatModel.XAi),
+                ("PERPLEXITY_API_KEY", LLmProviders.Perplexity, ChatModel.Perplexity),
+            }) {
+                if (Environment.GetEnvironmentVariable(envKey) is string apiKey && !string.IsNullOrEmpty(apiKey)) {
+                    providerAuthentications.Add(new ProviderAuthentication(provider, apiKey));
+                    allModels.AddRange(vendorProvider.AllModels.Select(m => m.Name));
+                    logger.LogInformation("{Provider} API key configured", provider);
+                }
+            }
+
+            if (Environment.GetEnvironmentVariable("NOTT3CHAT_MODELS_FILTER") is string modelsFilter && !string.IsNullOrEmpty(modelsFilter)) {
+                var modelsFilterArr = modelsFilter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                allModels = [.. allModels.Where(modelsFilterArr.Contains)];
+                logger.LogInformation("Found models filter {Filter}, removing the rest", modelsFilter);
+            }
+            
+            _api = new TornadoApi(providerAuthentications);
+            _models = [.. allModels];
+            logger.LogInformation("TorandoService initialized with {ModelCount} models", _models.Length);
+        }
+
+        public ICollection<ChatModelDTO> GetAvailableModels() {
+            return _models.Select(m => new ChatModelDTO(m)).ToList();
+        }
+
+        public async Task InitiateConversationAsync(string model, ICollection<NotT3Message> messages, ExtendedChatStreamEventHandler handler) {
+            _logger.LogInformation("Initiating conversation with model: {Model}, message count: {MessageCount}", model, messages.Count);
+            try {
+                var convo = _api.Chat.CreateConversation(model);
+                foreach (var msg in messages)
+                    convo.AppendMessage(msg.Role, msg.Content);
+                await convo.StreamResponseRich(handler);
+                _logger.LogInformation("Conversation streaming completed");
+            }
+            catch (Exception ex) {
+                await (handler.ExceptionOccurredHandler?.Invoke(ex) ?? ValueTask.CompletedTask);
+                _logger.LogError(ex, "Error during conversation streaming");
+                throw;
+            }
+        }
+    }
+}
+#endregion
+
+#region DTOs/ChatModelDTO.cs
+namespace NotT3ChatBackend.DTOs
+{
+    public record ChatModelDTO(string Name, string Provider) {
+        public ChatModelDTO(ChatModel model) : this(model.Name, model.Provider.ToString()) {
+            // This is a simple DTO, so we don't need to do anything else
+        }
+    }
+}
+#endregion
+
+#region Hubs/ChatHub.cs
+namespace NotT3ChatBackend.Hubs {
+    public class ChatHub : Hub {
+        private readonly TornadoService _torandoService;
+        private readonly AppDbContext _dbContext;
+        private readonly UserManager<NotT3User> _userManager;
+        private readonly IMemoryCache _memoryCache;
+        private readonly ILogger<ChatHub> _logger;
+
+        public ChatHub(TornadoService torandoService, AppDbContext dbContext, UserManager<NotT3User> userManager, IMemoryCache memoryCache, ILogger<ChatHub> logger) {
+            _torandoService = torandoService;
+            _dbContext = dbContext;
+            _userManager = userManager;
+            _memoryCache = memoryCache;
+            _logger = logger;
+        }
+
+        public override async Task OnConnectedAsync() {
+            string convoId = Context.GetHttpContext()!.Request.RouteValues["conversationId"]!.ToString()!;
+            _logger.LogInformation("User connecting to conversation: {ConversationId}", convoId);
+
+            var user = await _userManager.GetUserAsync(Context.User ?? throw new NotImplementedException());
+
+            // It must be an existing conversation - retrieve it and send the existing messages
+            var conversation = await _dbContext.GetConversationAsync(convoId, user!);
+            await _dbContext.Entry(conversation).Collection(c => c.Messages).LoadAsync();
+
+            _logger.LogInformation("Sending conversation history with {MessageCount} messages", conversation.Messages.Count);
+            // Send out the messages
+            await Clients.Client(Context.ConnectionId).SendAsync("ConversationHistory", conversation.Messages.OrderBy(m => m.Index).Select(m => new NotT3MessageDTO(m)).ToList());
+
+            // TODO: consider race condition?
+            // Check if we're in the middle of a message
+            if (conversation.IsStreaming) {
+                _logger.LogInformation("Conversation is currently streaming, checking for existing message");
+                if (_memoryCache.TryGetValue(convoId, out StreamingMessage? currentMsg)) {
+                    await currentMsg!.semaphore.WaitAsync();
+                    try {
+                        await Clients.Client(Context.ConnectionId).SendAsync("BeginAssistantMessage", DateTime.UtcNow.ToString()); // Store that in the cache too?
+                        await Clients.Client(Context.ConnectionId).SendAsync("NewAssistantPart", currentMsg.sbMessage.ToString());
+                        await Groups.AddToGroupAsync(Context.ConnectionId, convoId);
+                        _logger.LogInformation("User joined streaming conversation");
+                    }
+                    finally {
+                        currentMsg.semaphore.Release();
+                    }
+                }
+            }
+            else {
+                await Groups.AddToGroupAsync(Context.ConnectionId, convoId);
+                _logger.LogInformation("User joined conversation group");
+            }
+
+            await base.OnConnectedAsync();
+        }
+
+        public async Task NewMessage(string model, string message) {
+            string? convoId = Context.GetHttpContext()!.Request.RouteValues["conversationId"]!.ToString()!;
+            _logger.LogInformation("New message received for conversation: {ConversationId}, model: {Model}", convoId, model);
+
+            var user = await _userManager.GetUserAsync(Context.User ?? throw new NotImplementedException());
+            var convo = await _dbContext.GetConversationAsync(convoId, user!);
+
+            if (convo.IsStreaming) {
+                Log.Warning("Attempted to send message to streaming conversation: {ConversationId}", convoId);
+                throw new BadHttpRequestException("Conversation is already streaming, can't create a new message");
+            }
+
+            // Load in the messages
+            await _dbContext.Entry(convo).Collection(c => c.Messages).LoadAsync();
+            convo.Messages.Sort((a, b) => a.Index.CompareTo(b.Index));
+            _logger.LogInformation("Loaded {MessageCount} existing messages for conversation", convo.Messages.Count);
+
+            // Add in the new one
+            var userMsg = new NotT3Message() {
+                Index = convo.Messages.Count,
+                Role = ChatMessageRoles.User,
+                Content = message,
+                Timestamp = DateTime.UtcNow,
+                ConversationId = convo.Id,
+                UserId = user!.Id
+            };
+            _dbContext.Messages.Add(userMsg);
+            _logger.LogInformation("Added user message to conversation: {ConversationId}", convoId);
+
+            convo.IsStreaming = true;
+            await _dbContext.SaveChangesAsync();
+            _logger.LogInformation("Conversation marked as streaming and changes saved");
+
+            // Send out the user & assistant messages
+            await Clients.Group(convoId).SendAsync("UserMessage", new NotT3MessageDTO(userMsg));
+            var responseTimestamp = DateTime.UtcNow;
+            var responseId = Guid.NewGuid().ToString();
+            await Clients.Group(convoId).SendAsync("BeginAssistantMessage", responseTimestamp, responseId);
+            _logger.LogInformation("Starting assistant response with ID: {ResponseId}", responseId);
+
+            var streamingMessage = new StreamingMessage(new StringBuilder(), new SemaphoreSlim(1));
+            _memoryCache.Set(convoId, streamingMessage, TimeSpan.FromMinutes(5)); // Max expiration of 5 minutes
+
+            // Create our conversation and sync
+            await _torandoService.InitiateConversationAsync(model, convo.Messages, new ExtendedChatStreamEventHandler() {
+                MessagePartHandler = async (messagePart) => {
+                    await streamingMessage.semaphore.WaitAsync();
+                    try {
+                        streamingMessage.sbMessage.Append(messagePart.Text);
+                        await Clients.Group(convoId).SendAsync("NewAssistantPart", messagePart.Text);
+                    }
+                    finally {
+                        streamingMessage.semaphore.Release();
+                    }
+                },
+                OnFinished = async (data) => {
+                    _logger.LogInformation("Assistant message completed for conversation: {ConversationId}", convoId);
+                    await Clients.Group(convoId).SendAsync("EndAssistantMessage");
+
+                    _dbContext.Messages.Add(new NotT3Message() {
+                        Id = responseId,
+                        Index = convo.Messages.Count,
+                        Role = ChatMessageRoles.Assistant,
+                        Content = streamingMessage.sbMessage.ToString(),
+                        Timestamp = responseTimestamp,
+                        ConversationId = convo.Id,
+                        UserId = user!.Id
+                    });
+                    convo.IsStreaming = false;
+                    await _dbContext.SaveChangesAsync();
+                    _logger.LogInformation("Assistant message saved to database");
+
+                    _memoryCache.Set(convoId, streamingMessage, TimeSpan.FromMinutes(1));
+                },
+                ExceptionOccurredHandler = async (ex) => {
+                    _logger.LogError(ex, "Error during streaming for conversation: {ConversationId}", convoId);
+                    _memoryCache.Remove(convoId);
+                    convo.IsStreaming = false;
+                    await _dbContext.SaveChangesAsync();
+                }
+            });
+        }
+    }
+}
+#endregion
+
+#region Data/AppDbContext.cs
+namespace NotT3ChatBackend.Data {
+    public class AppDbContext(DbContextOptions<AppDbContext> options, ILogger<AppDbContext> logger) : IdentityDbContext<NotT3User>(options) {
 #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring as nullable.
-    internal DbSet<NotT3Conversation> Conversations { get; init; }
-    internal DbSet<NotT3Message> Messages { get; init; }
+        internal DbSet<NotT3Conversation> Conversations { get; init; }
+        internal DbSet<NotT3Message> Messages { get; init; }
 
-    internal async Task<NotT3Conversation> CreateConversationAsync(NotT3User user) {
-        var convo = new NotT3Conversation() {
-            UserId = user.Id
-        };
-        await Conversations.AddAsync(convo);
-        await SaveChangesAsync();
+        internal async Task<NotT3Conversation> CreateConversationAsync(NotT3User user) {
+            logger.LogInformation("Creating new conversation for user: {UserId}", user.Id);
+            var convo = new NotT3Conversation() {
+                UserId = user.Id
+            };
+            await Conversations.AddAsync(convo);
+            await SaveChangesAsync();
+            logger.LogInformation("Conversation created with ID: {ConversationId}", convo.Id);
+            return convo;
+        }
 
-        return convo;
-    }
-
-    internal async Task<NotT3Conversation> GetConversationAsync(string convoId, NotT3User user) {
-        var convo = await Conversations.FindAsync(convoId) ?? throw new KeyNotFoundException();
-        if (convo.UserId != user.Id)
-            throw new UnauthorizedAccessException();
-
-        return convo;
-    }
+        internal async Task<NotT3Conversation> GetConversationAsync(string convoId, NotT3User user) {
+            logger.LogDebug("Retrieving conversation: {ConversationId} for user: {UserId}", convoId, user.Id);
+            var convo = await Conversations.FindAsync(convoId);
+            if (convo == null) {
+                logger.LogWarning("Conversation not found: {ConversationId}", convoId);
+                throw new KeyNotFoundException();
+            }
+            if (convo.UserId != user.Id) {
+                logger.LogWarning("User {UserId} attempted to access conversation {ConversationId} owned by {OwnerId}", user.Id, convoId, convo.UserId);
+                throw new UnauthorizedAccessException();
+            }
+            return convo;
+        }
 #pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring as nullable.
-}
-
-public class NotT3User : IdentityUser {
-    // Navigators
-    public ICollection<NotT3Conversation> Conversations { get; set; } = [];
-}
-
-public class NotT3Conversation {
-    [Key]
-    public string Id { get; set; } = Guid.NewGuid().ToString();
-    public DateTime CreatedAt { get; } = DateTime.UtcNow;
-
-    public required string UserId { get; set; }
-    public bool IsStreaming { get; set; } = false;
-
-    // Navigators
-    public NotT3User? User { get; set; }
-    public List<NotT3Message> Messages { get; set; } = [];
-}
-
-public record NotT3ConversationDTO(string Id, DateTime CreatedAt) {
-    public NotT3ConversationDTO(NotT3Conversation conversation) : this(conversation.Id, conversation.CreatedAt) {
     }
 }
+#endregion
 
-public class NotT3Message {
-    [Key]
-    public string Id { get; set; } = Guid.NewGuid().ToString();
-    public required int Index { get; set; }
-    public required ChatMessageRoles Role { get; set; }
-    public required string Content { get; set; }
-    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+namespace NotT3ChatBackend.Models {
+    #region Models/StreamingMessage.cs
+    record StreamingMessage(StringBuilder sbMessage, SemaphoreSlim semaphore);
+    #endregion
+    #region Models/NotT3User.cs
+    public class NotT3User : IdentityUser {
+        // Navigators
+        public ICollection<NotT3Conversation> Conversations { get; set; } = [];
+    }
+    #endregion
 
-    public required string ConversationId { get; set; }
-    public required string UserId { get; set; }
+    #region Models/NotT3Conversation.cs
+    public class NotT3Conversation {
+        [Key]
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public DateTime CreatedAt { get; } = DateTime.UtcNow;
 
-    // Navigators
-    public NotT3Conversation? Conversation { get; set; }
-    public NotT3User? User { get; set; }
+        public required string UserId { get; set; }
+        public bool IsStreaming { get; set; } = false;
+
+        // Navigators
+        public NotT3User? User { get; set; }
+        public List<NotT3Message> Messages { get; set; } = [];
+    }
+    #endregion
+
+    #region Models/NotT3Message.cs
+    public class NotT3Message {
+        [Key]
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public required int Index { get; set; }
+        public required ChatMessageRoles Role { get; set; }
+        public required string Content { get; set; }
+        public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+
+        public required string ConversationId { get; set; }
+        public required string UserId { get; set; }
+
+        // Navigators
+        public NotT3Conversation? Conversation { get; set; }
+        public NotT3User? User { get; set; }
+    }
+    #endregion
 }
-public record NotT3MessageDTO(string Id, int Index, string Role, string Content, DateTime Timestamp) {
-    public NotT3MessageDTO(NotT3Message message) : this(message.Id, message.Index, message.Role.ToString().ToLower(), message.Content, message.Timestamp) {
+
+namespace NotT3ChatBackend.DTOs {
+    #region DTOs/NotT3ConversationDTO.cs
+    public record NotT3ConversationDTO(string Id, DateTime CreatedAt) {
+        public NotT3ConversationDTO(NotT3Conversation conversation) : this(conversation.Id, conversation.CreatedAt) {
+        }
+    }
+    #endregion
+
+    #region DTOs/NotT3MessageDTO.cs
+    public record NotT3MessageDTO(string Id, int Index, string Role, string Content, DateTime Timestamp) {
+        public NotT3MessageDTO(NotT3Message message) : this(message.Id, message.Index, message.Role.ToString().ToLower(), message.Content, message.Timestamp) {
+        }
+    }
+    #endregion
+}
+
+#region Utils/ExtendedChatStreamEventHandler.cs
+namespace NotT3ChatBackend.Utils {
+    public class ExtendedChatStreamEventHandler : ChatStreamEventHandler {
+        public Func<Exception, ValueTask>? ExceptionOccurredHandler { get; set; }
     }
 }
+#endregion

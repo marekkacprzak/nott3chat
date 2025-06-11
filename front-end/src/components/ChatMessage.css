@@ -16,10 +16,17 @@
 }
 
 .chat-message .message-content {
-  max-width: 70%;
   display: flex;
   align-items: flex-start;
   gap: 8px;
+}
+
+.chat-message .message-content.user {
+  max-width: 70%;
+}
+
+.chat-message .message-content.assistant {
+  max-width: 85%;
 }
 
 .chat-message .message-content.user {
@@ -57,6 +64,8 @@
   padding-bottom: 12px;
   position: relative;
   word-break: break-word;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 .chat-message .message-paper.user {
@@ -107,13 +116,54 @@
   font-size: 0.9em;
   margin-top: 8px;
   margin-bottom: 8px;
+  max-width: 100%;
 }
 
-.chat-message .markdown-content ul,
-.chat-message .markdown-content ol {
+.chat-message .markdown-content {
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  overflow: hidden;
+}
+
+.chat-message .markdown-code-block {
+  margin: 16px 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.chat-message .markdown-code-block > div {
+  border-radius: 8px !important;
+  font-size: 14px !important;
+  margin: 0 !important;
+  max-width: 100% !important;
+  overflow: auto !important;
+}
+
+.chat-message .markdown-code-inline {
+  background-color: #f5f5f5;
+  color: #d32f2f;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.9em;
+  border: 1px solid #e0e0e0;
+  word-break: break-all;
+  display: inline;
+}
+
+.chat-message .markdown-pre {
+  margin: 16px 0;
+}
+
+.chat-message .markdown-blockquote {
+  border-left: 4px solid #1976d2;
   padding-left: 16px;
-  margin-top: 8px;
-  margin-bottom: 8px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  margin: 16px 0;
+  background-color: #fafafa;
+  font-style: italic;
 }
 
 .chat-message .markdown-content blockquote {

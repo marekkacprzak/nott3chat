@@ -4,6 +4,9 @@ import { Box, Paper, Typography, CircularProgress } from '@mui/material';
 import { Person, SmartToy } from '@mui/icons-material';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import './ChatMessage.css';
 
 const formatTime = (timestamp) => {
@@ -60,25 +63,45 @@ const ChatMessage = ({ message }) => {
               {isAssistant ? (
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeHighlight]}
                   components={{
-                    p: ({ children }) => (
-                      <Typography variant="body1" component="div">
-                        {children}
-                      </Typography>
-                    ),
-                    code: ({ inline, children }) =>
-                      inline ? (
-                        <code>{children}</code>
+                    code: ({ inline, className, children, ...props }) => {
+                      const match = /language-(\w+)/.exec(className || '');
+                      const language = match ? match[1] : '';
+                      
+                      // Properly extract text content from children
+                      const getTextContent = (node) => {
+                        if (typeof node === 'string') return node;
+                        if (Array.isArray(node)) return node.map(getTextContent).join('');
+                        if (node && node.props && node.props.children) return getTextContent(node.props.children);
+                        return '';
+                      };
+                      
+                      const codeString = getTextContent(children).replace(/\n$/, '');
+                      
+                      return !inline && language ? (
+                        <div className="markdown-code-block">
+                          <SyntaxHighlighter
+                            style={vscDarkPlus}
+                            language={language}
+                            PreTag="div"
+                            {...props}
+                          >
+                            {codeString}
+                          </SyntaxHighlighter>
+                        </div>
                       ) : (
-                        <pre>
-                          <code>{children}</code>
-                        </pre>
-                      ),
-                    ul: ({ children }) => <ul>{children}</ul>,
-                    ol: ({ children }) => <ol>{children}</ol>,
-                    blockquote: ({ children }) => (
-                      <blockquote>{children}</blockquote>
+                        <code className="markdown-code-inline" {...props}>
+                          {codeString}
+                        </code>
+                      );
+                    },
+                    pre: ({ children }) => (
+                      <div className="markdown-pre">{children}</div>
                     ),
+                    blockquote: ({ children }) => (
+                      <blockquote className="markdown-blockquote">{children}</blockquote>
+                    )
                   }}
                 >
                   {message.content || ''}
