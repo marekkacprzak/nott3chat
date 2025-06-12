@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -31,12 +31,14 @@ const ChatRoom = () => {
   const [selectedModel, setSelectedModel] = useState('');
   const messagesEndRef = useRef(null);
   const { logout } = useAuth();
-  const { addNewChat } = useChats();
+  const { addNewChat, updateChatTitle, chats } = useChats();
   const { chatId } = useParams();
   const navigate = useNavigate();
 
+  const activeChat = useMemo(() => chats.find(c => c.id == chatId), [chatId, chats]);
+
   // Only connect to SignalR if we have a chatId
-  const { messages, sendMessage, regenerateMessage, isConnected, currentAssistantMessage } =
+  const { messages, sendMessage, regenerateMessage, isConnected, currentAssistantMessage, chatTitle } =
     useSignalR(chatId);
 
   const scrollToBottom = useCallback(() => {
@@ -46,6 +48,27 @@ const ChatRoom = () => {
   useEffect(() => {
     scrollToBottom();
   }, [scrollToBottom, messages, currentAssistantMessage]);
+
+  // Update chat title in context when it changes via SignalR
+  useEffect(() => {
+    if (chatId && chatTitle) {
+      updateChatTitle(chatId, chatTitle);
+    }
+  }, [chatId, chatTitle, updateChatTitle]);
+
+  // Update selected model to match the last message's model
+  useEffect(() => {
+    if (messages.length > 0) {
+      // Find the last assistant message with a model
+      const lastAssistantMessage = [...messages]
+        .reverse()
+        .find(msg => msg.type === 'assistant' && msg.chatModel);
+      
+      if (lastAssistantMessage && lastAssistantMessage.chatModel !== selectedModel) {
+        setSelectedModel(lastAssistantMessage.chatModel);
+      }
+    }
+  }, [messages, selectedModel]);
 
   // Effect to send pending message when SignalR connection is established
   useEffect(() => {
@@ -71,16 +94,13 @@ const ChatRoom = () => {
     async (message) => {
       setIsCreatingChat(true);
       try {
-        const { id: newChatId, createdAt } = await chatApi.createNewChat();
+        const newChat = await chatApi.createNewChat();
         // Add to chat list
-        addNewChat({
-          id: newChatId,
-          createdAt: createdAt,
-        });
+        addNewChat(newChat);
         // Set the pending message to send after connection
         setPendingMessage(message);
         // Navigate to the new chat
-        navigate(`/chat/${newChatId}`);
+        navigate(`/chat/${newChat.id}`);
         // Clear input and creating state
         setMessageInput('');
         setIsCreatingChat(false);
@@ -131,7 +151,7 @@ const ChatRoom = () => {
         <AppBar position="static">
           <Toolbar>
             <Typography variant="h6" component="div" className="app-bar-title">
-              {chatId ? `Chat ${chatId.substring(0, 8)}...` : 'New Chat'}
+              {chatId && activeChat ? activeChat.title : 'New Chat'}
             </Typography>
             {chatId && (
               <Chip

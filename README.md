@@ -65,12 +65,24 @@ The UI was mostly crafted with the help of **Claude Code**. It was a surprisingl
 
 The backend runs on port `http://localhost:5128` by default in debug mode.
 
+**Configuration:**
+
+The backend reads the configuration from the environment variables, here are the options:
+
+```bash
+# Options are GOOGLE_API_KEY, OAI_API_KEY, ANTHROPIC_API_KEY, COHERE_API_KEY, GROQ_API_KEY, DEEPSEEK_API_KEY, MISTRAL_API_KEY, XAI_API_KEY, PERPLEXITY_API_KEY
+export XXXXXX_API_KEY=...
+
+# Optional: If you don't specify this, it will display all the available models from the providers that you specified an API key for
+export NOTT3CHAT_MODELS_FILTER=gpt-4o-mini,gemini-2.0-flash-001,gemini-2.0-flash-lite-001
+
+# Optional: Specify which model should be used for generating titles for chats. Default to gemini-2.0-flash-lite-001
+# If the specified model doesn't have an API key matching, then it will just assign "New Chat" to all models
+export NOTT3CHAT_TITLE_MODEL=gemini-2.0-flash-lite-001
+```
+
 **Debug Mode:**
 ```bash
-# From the root directory - specify whichever ones are relevant. Options are GOOGLE_API_KEY, OAI_API_KEY, ANTHROPIC_API_KEY, COHERE_API_KEY, GROQ_API_KEY, DEEPSEEK_API_KEY, MISTRAL_API_KEY, XAI_API_KEY, PERPLEXITY_API_KEY
-export XXXXXX_API_KEY=...
-# If you don't specify this, it will display all the available models from the providers that you specified an API key for
-export NOTT3CHAT_MODELS_FILTER=gpt-4o-mini,gemini-2.0-flash-001,gemini-2.0-flash-lite-001
 dotnet run --project backend/NotT3ChatBackend.csproj
 ```
 > **Note:** The first time you run this, it will create a `databse.dat` SQLite file. When running in debug it will seed it with a default user:
@@ -83,8 +95,6 @@ dotnet run --project backend/NotT3ChatBackend.csproj
 dotnet publish backend/NotT3ChatBackend.csproj -c Release -o publish
 
 # Run the published app (example on port 5555)
-export GOOGLE_API_KEY=...
-export OAI_API_KEY=...
 dotnet publish/NotT3ChatBackend.dll --urls http://0.0.0.0:5555
 ```
 

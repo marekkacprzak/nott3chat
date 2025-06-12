@@ -253,6 +253,7 @@ namespace NotT3ChatBackend.Services {
     public class TornadoService {
         private readonly TornadoApi _api;
         private readonly string[] _models;
+        private readonly string? _titleModel;
         private readonly ILogger<TornadoService> _logger;
 
         public TornadoService(ILogger<TornadoService> logger) {
@@ -277,13 +278,21 @@ namespace NotT3ChatBackend.Services {
                     logger.LogInformation("{Provider} API key configured", provider);
                 }
             }
-            
+
+            // Choose the title model - if it doesn't exist in the list of available models, then just don't
+            _titleModel = Environment.GetEnvironmentVariable("NOTT3CHAT_TITLE_MODEL");
+            if (string.IsNullOrWhiteSpace(_titleModel)) _titleModel = "gemini-2.0-flash-lite-001";
+            if (!allModels.Contains(_titleModel)) {
+                _titleModel = null;
+                logger.LogWarning("Title model {TitleModel} not found in available models, skipping", _titleModel);
+            }
+
             if (Environment.GetEnvironmentVariable("NOTT3CHAT_MODELS_FILTER") is string modelsFilter && !string.IsNullOrEmpty(modelsFilter)) {
                 var modelsFilterArr = modelsFilter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 allModels = [.. allModels.Where(modelsFilterArr.Contains)];
                 logger.LogInformation("Found models filter {Filter}, removing the rest", modelsFilter);
             }
-            
+
             _api = new TornadoApi(providerAuthentications);
             _models = [.. allModels];
             logger.LogInformation("TorandoService initialized with {ModelCount} models", _models.Length);
@@ -306,6 +315,27 @@ namespace NotT3ChatBackend.Services {
                 await (handler.ExceptionOccurredHandler?.Invoke(ex) ?? ValueTask.CompletedTask);
                 _logger.LogError(ex, "Error during conversation streaming");
                 throw;
+            }
+        }
+
+        public async Task InitiateTitleAssignment(string initialMessage, Func<ChatRichResponse, ValueTask> onComplete) {
+            if (_titleModel is null) {
+                _logger.LogWarning("Title model is not configured, skipping title assignment");
+                return;
+            }
+
+            _logger.LogInformation("Initiating title assignment with model: {Model}", _titleModel);
+            try {
+                var convo = _api.Chat.CreateConversation(_titleModel);
+                convo.AppendMessage(ChatMessageRoles.System, "You are an expert chat title generator. Your task is to analyze a user's initial chat message (or the first 500 characters if it's very long) and provide a concise, descriptive, and engaging title for that chat. The title should clearly reflect the primary topic or purpose of the conversation. Output only the title, no more than 6 words.");
+                convo.AppendMessage(ChatMessageRoles.User, initialMessage[..Math.Min(500, initialMessage.Length)]);
+                var response = await convo.GetResponseRich();
+                _logger.LogInformation("Title assignment completed: {Title}", response.Text);
+
+                await onComplete.Invoke(response);
+            }
+            catch (Exception ex) {
+                _logger.LogError(ex, "Error during title assignment");
             }
         }
     }
@@ -407,6 +437,17 @@ namespace NotT3ChatBackend.Hubs {
             _dbContext.Messages.Add(userMsg);
             _logger.LogInformation("Added user message to conversation: {ConversationId}", convoId);
 
+            // First message? Get a title
+            if (userMsg.Index == 0) {
+                _logger.LogInformation("First message in conversation, generating title asynchronously");
+                _ = _torandoService.InitiateTitleAssignment(userMsg.Content, async response => {
+                    convo.Title = response.Text[..Math.Min(40, response.Text.Length)]; // ~6 words
+                    await _dbContext.SaveChangesAsync();
+                    // TODO: move this to a general listener
+                    await Clients.Group(convoId).SendAsync("ChatTitle", convo.Title);
+                });
+            }
+
             convo.IsStreaming = true;
             await _dbContext.SaveChangesAsync();
             _logger.LogInformation("Conversation marked as streaming and changes saved");
@@ -458,9 +499,10 @@ namespace NotT3ChatBackend.Hubs {
             // Remove the old messages
             _logger.LogInformation("Regenerating message, removing {Count} messages from index {Index}", convo.Messages.Count - idxOfMessage, idxOfMessage);
             _dbContext.RemoveRange(convo.Messages.Skip(idxOfMessage));
+            convo.Messages.RemoveRange(idxOfMessage, convo.Messages.Count - idxOfMessage);
 
             // Zero out the contents of the last message
-            _logger.LogInformation("Zeroing out content of last message with ID: {MessageId}", convo.Messages[idxOfMessage].Id);
+            _logger.LogInformation("Zeroing out content of last message with ID: {MessageId}", lastMessage.Id);
             lastMessage.Content = "";
             lastMessage.FinishError = null;
             lastMessage.ChatModel = model;
@@ -573,7 +615,7 @@ namespace NotT3ChatBackend.Models {
         [Key]
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public DateTime CreatedAt { get; } = DateTime.UtcNow;
-
+        public string Title { get; set; } = "New Chat";
         public required string UserId { get; set; }
         public bool IsStreaming { get; set; } = false;
 
@@ -606,8 +648,8 @@ namespace NotT3ChatBackend.Models {
 
 namespace NotT3ChatBackend.DTOs {
     #region DTOs/NotT3ConversationDTO.cs
-    public record NotT3ConversationDTO(string Id, DateTime CreatedAt) {
-        public NotT3ConversationDTO(NotT3Conversation conversation) : this(conversation.Id, conversation.CreatedAt) {
+    public record NotT3ConversationDTO(string Id, DateTime CreatedAt, string Title) {
+        public NotT3ConversationDTO(NotT3Conversation conversation) : this(conversation.Id, conversation.CreatedAt, conversation.Title) {
         }
     }
     #endregion

@@ -117,7 +117,7 @@ const ChatSidebar = ({ onChatSelect, currentChatId }) => {
                           selected: currentChatId === chat.id,
                         })}
                       >
-                        Chat {chat.id.substring(0, 8)}...
+                        {chat.title}
                       </Typography>
                       <Typography variant="caption" className="chat-date">
                         {formatDate(chat.createdAt)}

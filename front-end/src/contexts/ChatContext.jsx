@@ -31,6 +31,16 @@ export const ChatProvider = ({ children }) => {
     setChats((prev) => [newChat, ...prev]);
   }, []);
 
+  const updateChatTitle = useCallback((chatId, newTitle) => {
+    setChats((prev) => 
+      prev.map(chat => 
+        chat.id === chatId 
+          ? { ...chat, title: newTitle }
+          : chat
+      )
+    );
+  }, []);
+
   const deleteChat = useCallback(async (chatId) => {
     try {
       await chatApi.deleteChat(chatId);
@@ -49,6 +59,7 @@ export const ChatProvider = ({ children }) => {
     hasLoaded,
     loadChats,
     addNewChat,
+    updateChatTitle,
     deleteChat,
   };
 

@@ -26,6 +26,7 @@ export const useSignalR = (chatId) => {
   const [messages, setMessages] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [currentAssistantMessage, setCurrentAssistantMessage] = useState(null);
+  const [chatTitle, setChatTitle] = useState(null);
 
   useEffect(() => {
     // Clean up any existing connection first
@@ -42,6 +43,7 @@ export const useSignalR = (chatId) => {
     setIsConnected(false);
     setMessages([]);
     setCurrentAssistantMessage(null);
+    setChatTitle(null);
 
     if (!chatId) {
       return;
@@ -94,6 +96,7 @@ export const useSignalR = (chatId) => {
     connection.off('NewAssistantPart');
     connection.off('EndAssistantMessage');
     connection.off('RegenerateMessage');
+    connection.off('ChatTitle');
 
     connection
       .start()
@@ -141,6 +144,11 @@ export const useSignalR = (chatId) => {
           );
           setCurrentAssistantMessage(null);
         });
+
+        // Handle chat title updates
+        connection.on('ChatTitle', (title) => {
+          setChatTitle(title);
+        });
       })
       .catch((error) => {
         console.error('SignalR connection error:', error);
@@ -169,6 +177,7 @@ export const useSignalR = (chatId) => {
         connection.off('NewAssistantPart');
         connection.off('EndAssistantMessage');
         connection.off('RegenerateMessage');
+        connection.off('ChatTitle');
       }
     };
   }, [connection]);
@@ -205,5 +214,6 @@ export const useSignalR = (chatId) => {
     regenerateMessage,
     isConnected,
     currentAssistantMessage,
+    chatTitle,
   };
 };
