@@ -147,7 +147,7 @@ export const useSignalR = (chatId) => {
 
         // Handle chat title updates
         connection.on('ChatTitle', (title) => {
-          setChatTitle(title);
+          setChatTitle({title, chatId});
         });
       })
       .catch((error) => {

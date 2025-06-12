@@ -51,8 +51,8 @@ const ChatRoom = () => {
 
   // Update chat title in context when it changes via SignalR
   useEffect(() => {
-    if (chatId && chatTitle) {
-      updateChatTitle(chatId, chatTitle);
+    if (chatId && chatTitle && chatTitle.chatId === chatId) {
+      updateChatTitle(chatId, chatTitle.title);
     }
   }, [chatId, chatTitle, updateChatTitle]);
 
@@ -64,11 +64,11 @@ const ChatRoom = () => {
         .reverse()
         .find(msg => msg.type === 'assistant' && msg.chatModel);
       
-      if (lastAssistantMessage && lastAssistantMessage.chatModel !== selectedModel) {
+      if (lastAssistantMessage) {
         setSelectedModel(lastAssistantMessage.chatModel);
       }
     }
-  }, [messages, selectedModel]);
+  }, [messages]);
 
   // Effect to send pending message when SignalR connection is established
   useEffect(() => {
