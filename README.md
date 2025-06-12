@@ -122,17 +122,17 @@ VITE_API_URL=http://localhost:5128 npm run dev
 Here's a non-exhaustive list of what's planned when I get around to it:
 
 - [ ] Attachments (files, images)
-- [v] Better syntax highlighting for code blocks
+- [x] Better syntax highlighting for code blocks
 - [ ] Even better syntax highlighting, with copy buttons
-- [v] Branching conversations
+- [x] Branching conversations
 - [ ] Tools (like web search)
 - [ ] Image generation
 - [ ] Chat sharing via public links
 - [ ] Bring Your Own Key (BYOK) for API providers
-- [v] Regenerate message (or regenerate with a different model)
-- [v] Delete chats
+- [x] Regenerate message (or regenerate with a different model)
+- [x] Delete chats
 - [ ] Delete individual messages?
-- [v] Intelligent, automatic naming for new chats
+- [x] Intelligent, automatic naming for new chats
 - [ ] Search through threads
 - [ ] Make it prettier?
 - [ ] Thinking models
@@ -156,12 +156,12 @@ To maintain sanity without TypeScript, we follow a few simple styling rules:
 
 ### Technical To-Do List
 
-- [v] Graceful error handling (e.g., 429 Too Many Requests, content filter blocks). (More or less done, can always be improved)
-- [v] Streamline adding new models via environment variables instead of code changes.
+- [x] Graceful error handling (e.g., 429 Too Many Requests, content filter blocks). (More or less done, can always be improved)
+- [x] Streamline adding new models via environment variables instead of code changes.
 - [ ] Abstract the database context to easily switch between providers (In-Memory, SQLite, PostgreSQL, etc.).
 - [ ] Consider segmenting larger UI components into smaller, more focused ones.
 - [ ] Add an easy way to specify a default user account via environment variables for local development.
-- [v] Logging
+- [x] Logging
 - [ ] Move to redis for distributed cache for better synchronization & locking for actively streaming chats.
 - [ ] Fix general chat events to always stream (delete, title, new)
 
