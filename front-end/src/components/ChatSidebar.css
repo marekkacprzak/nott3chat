@@ -90,6 +90,9 @@
 
 .chat-sidebar .chat-button {
   border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .chat-sidebar .chat-button.selected {
@@ -104,6 +107,34 @@
 .chat-sidebar .chat-content {
   flex: 1;
   min-width: 0;
+}
+
+.chat-sidebar .chat-actions {
+  display: flex;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.chat-sidebar .chat-item:hover .chat-actions {
+  opacity: 1;
+}
+
+.chat-sidebar .delete-button {
+  color: #dc2626;
+  padding: 4px;
+}
+
+.chat-sidebar .delete-button:hover {
+  background-color: rgba(220, 38, 38, 0.1);
+}
+
+.chat-sidebar .chat-button.selected .delete-button {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.chat-sidebar .chat-button.selected .delete-button:hover {
+  color: white;
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
 .chat-sidebar .chat-title {

@@ -10,6 +10,7 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ChatProvider } from './contexts/ChatContext';
+import { ModelsProvider } from './contexts/ModelsContext';
 import LoginPage from './components/LoginPage';
 import ChatRoom from './components/ChatRoom';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -87,9 +88,11 @@ const AppRoutes = () => {
         path="/chat"
         element={
           <ProtectedRoute>
-            <ChatProvider>
-              <ChatRoom />
-            </ChatProvider>
+            <ModelsProvider>
+              <ChatProvider>
+                <ChatRoom />
+              </ChatProvider>
+            </ModelsProvider>
           </ProtectedRoute>
         }
       />
@@ -97,9 +100,11 @@ const AppRoutes = () => {
         path="/chat/:chatId"
         element={
           <ProtectedRoute>
-            <ChatProvider>
-              <ChatRoom />
-            </ChatProvider>
+            <ModelsProvider>
+              <ChatProvider>
+                <ChatRoom />
+              </ChatProvider>
+            </ModelsProvider>
           </ProtectedRoute>
         }
       />

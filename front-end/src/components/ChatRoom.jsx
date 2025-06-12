@@ -36,7 +36,7 @@ const ChatRoom = () => {
   const navigate = useNavigate();
 
   // Only connect to SignalR if we have a chatId
-  const { messages, sendMessage, isConnected, currentAssistantMessage } =
+  const { messages, sendMessage, regenerateMessage, isConnected, currentAssistantMessage } =
     useSignalR(chatId);
 
   const scrollToBottom = useCallback(() => {
@@ -56,6 +56,16 @@ const ChatRoom = () => {
       sendMessage(selectedModel, messageToSend);
     }
   }, [isConnected, pendingMessage, isCreatingChat, sendMessage, selectedModel]);
+
+  const forkChat = useCallback(async (messageId) => {
+    try {
+      const newChat = await chatApi.forkChat(chatId, messageId);
+      addNewChat(newChat);
+      navigate(`/chat/${newChat.id}`);
+    } catch (error) {
+      console.error('Error forking chat:', error);
+    }
+  }, [addNewChat, navigate, chatId]); 
 
   const createNewChatAndSend = useCallback(
     async (message) => {
@@ -159,7 +169,14 @@ const ChatRoom = () => {
                 ) : (
                   <Box className="messages-container">
                     {messages.map((message) => (
-                      <ChatMessage key={message.id} message={message} />
+                      <ChatMessage 
+                        key={message.id} 
+                        message={message} 
+                        selectedModel={selectedModel}
+                        onSetSelectedModel={setSelectedModel}
+                        onRegenerateMessage={regenerateMessage}
+                        onForkChat={forkChat}
+                      />
                     ))}
                     <div ref={messagesEndRef} />
                   </Box>

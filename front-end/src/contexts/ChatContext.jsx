@@ -31,6 +31,17 @@ export const ChatProvider = ({ children }) => {
     setChats((prev) => [newChat, ...prev]);
   }, []);
 
+  const deleteChat = useCallback(async (chatId) => {
+    try {
+      await chatApi.deleteChat(chatId);
+      setChats((prev) => prev.filter(chat => chat.id !== chatId));
+      return true;
+    } catch (err) {
+      console.error('Error deleting chat:', err);
+      return false;
+    }
+  }, []);
+
   const value = {
     chats,
     loading,
@@ -38,6 +49,7 @@ export const ChatProvider = ({ children }) => {
     hasLoaded,
     loadChats,
     addNewChat,
+    deleteChat,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

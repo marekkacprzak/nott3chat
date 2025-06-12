@@ -1,14 +1,25 @@
 import { useEffect, useState, useCallback } from 'react';
 import * as signalR from '@microsoft/signalr';
 
-const serverMessageToLocal = (serverMsg) => ({
+const serverMessageToLocal = (serverMsg, isComplete = true) => ({
   id: serverMsg.id,
   index: serverMsg.index,
   type: serverMsg.role,
   content: serverMsg.content,
   timestamp: new Date(serverMsg.timestamp),
-  isComplete: true,
+  isComplete,
+  chatModel: serverMsg.chatModel || null,
+  finishError: serverMsg.finishError || null,
 });
+
+const replaceOrAddMessage = (prevList, newMessage) => {
+  // Replace message if ID exists, otherwise add new
+  const existingIndex = prevList.findIndex(msg => msg.id === newMessage.id);
+  if (existingIndex >= 0) {
+    return [...prevList.slice(0, existingIndex), newMessage];
+  }
+  return [...prevList, newMessage];
+}
 
 export const useSignalR = (chatId) => {
   const [connection, setConnection] = useState(null);
@@ -82,6 +93,7 @@ export const useSignalR = (chatId) => {
     connection.off('BeginAssistantMessage');
     connection.off('NewAssistantPart');
     connection.off('EndAssistantMessage');
+    connection.off('RegenerateMessage');
 
     connection
       .start()
@@ -94,20 +106,14 @@ export const useSignalR = (chatId) => {
 
         // Handle user messages
         connection.on('UserMessage', (message) => {
-          setMessages((prev) => [...prev, serverMessageToLocal(message)]);
+          setMessages((prev) => replaceOrAddMessage(prev, serverMessageToLocal(message)));
         });
 
         // Begin assistant message
-        connection.on('BeginAssistantMessage', (dateUtc, id) => {
-          const newMessage = {
-            id,
-            type: 'assistant',
-            content: '',
-            timestamp: new Date(dateUtc),
-            isComplete: false,
-          };
+        connection.on('BeginAssistantMessage', (message) => {
+          const newMessage = serverMessageToLocal(message, false);
           setCurrentAssistantMessage(newMessage);
-          setMessages((prev) => [...prev, newMessage]);
+          setMessages((prev) => replaceOrAddMessage(prev, newMessage));
         });
 
         // Add text to current assistant message
@@ -125,11 +131,11 @@ export const useSignalR = (chatId) => {
         });
 
         // End assistant message
-        connection.on('EndAssistantMessage', () => {
+        connection.on('EndAssistantMessage', (finishError) => {
           setMessages((prev) =>
             prev.map((msg) =>
               msg.type === 'assistant' && !msg.isComplete
-                ? { ...msg, isComplete: true }
+                ? { ...msg, isComplete: true, finishError: finishError || null }
                 : msg
             )
           );
@@ -162,6 +168,7 @@ export const useSignalR = (chatId) => {
         connection.off('BeginAssistantMessage');
         connection.off('NewAssistantPart');
         connection.off('EndAssistantMessage');
+        connection.off('RegenerateMessage');
       }
     };
   }, [connection]);
@@ -179,9 +186,23 @@ export const useSignalR = (chatId) => {
     [connection, isConnected]
   );
 
+  const regenerateMessage = useCallback(
+    async (model, messageId) => {
+      if (connection && isConnected) {
+        try {
+          await connection.invoke('RegenerateMessage', model, messageId);
+        } catch (error) {
+          console.error('Error regenerating message:', error);
+        }
+      }
+    },
+    [connection, isConnected]
+  );
+
   return {
     messages,
     sendMessage,
+    regenerateMessage,
     isConnected,
     currentAssistantMessage,
   };

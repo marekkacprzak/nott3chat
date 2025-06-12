@@ -17,13 +17,14 @@ import {
 import {
   Add as AddIcon,
   Chat as ChatIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { useChats } from '../contexts/ChatContext';
 import { formatDate } from '../extra/utils';
 import './ChatSidebar.css';
 
 const ChatSidebar = ({ onChatSelect, currentChatId }) => {
-  const { chats, loading, error, hasLoaded, loadChats } = useChats();
+  const { chats, loading, error, hasLoaded, loadChats, deleteChat } = useChats();
 
   // Load chats once when component mounts if not already loaded
   useEffect(() => {
@@ -41,6 +42,18 @@ const ChatSidebar = ({ onChatSelect, currentChatId }) => {
       onChatSelect(chatId);
     },
     [onChatSelect]
+  );
+
+  const handleDeleteChat = useCallback(
+    async (event, chatId) => {
+      event.stopPropagation(); // Prevent triggering chat selection
+      const success = await deleteChat(chatId);
+      if (success && currentChatId === chatId) {
+        // If we deleted the currently selected chat, navigate to new chat
+        onChatSelect(null);
+      }
+    },
+    [deleteChat, currentChatId, onChatSelect]
   );
 
   const drawerContent = (
@@ -109,6 +122,16 @@ const ChatSidebar = ({ onChatSelect, currentChatId }) => {
                       <Typography variant="caption" className="chat-date">
                         {formatDate(chat.createdAt)}
                       </Typography>
+                    </Box>
+                    <Box className="chat-actions">
+                      <IconButton
+                        size="small"
+                        onClick={(e) => handleDeleteChat(e, chat.id)}
+                        className="delete-button"
+                        title="Delete chat"
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
                     </Box>
                   </ListItemButton>
                 </ListItem>

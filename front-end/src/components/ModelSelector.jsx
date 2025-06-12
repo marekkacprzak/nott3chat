@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import lcn from 'light-classnames';
 import {
@@ -23,7 +23,7 @@ import {
   FlashOn,
   TravelExplore,
 } from '@mui/icons-material';
-import { modelApi } from '../services/modelApi';
+import { useModels } from '../contexts/ModelsContext';
 import './ModelSelector.css';
 
 const providerIcons = {
@@ -55,31 +55,14 @@ const providerClasses = {
 };
 
 const ModelSelector = ({ selectedModel, onModelChange, disabled }) => {
-  const [models, setModels] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const { models, loading, error } = useModels();
 
   useEffect(() => {
-    const loadModels = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const modelData = await modelApi.getModels();
-        setModels(modelData);
-        // Set default model if none selected and models available
-        if (!selectedModel && modelData.length > 0) {
-          onModelChange(modelData[0].name);
-        }
-      } catch (err) {
-        setError('Failed to load models');
-        console.error('Error loading models:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadModels();
-  }, [selectedModel, onModelChange]);
+    // Set default model if none selected and models available
+    if (!selectedModel && models.length > 0) {
+      onModelChange(models[0].name);
+    }
+  }, [selectedModel, onModelChange, models]);
 
   const handleChange = useCallback(
     (event) => {
@@ -98,7 +81,13 @@ const ModelSelector = ({ selectedModel, onModelChange, disabled }) => {
     );
   }
 
-  if (error || models.length === 0) {
+  if (error) {
+    return (
+      <Chip label="Error loading models" size="small" color="error" variant="outlined" />
+    );
+  }
+
+  if (!loading && models.length === 0) {
     return (
       <Chip label="No models" size="small" color="error" variant="outlined" />
     );

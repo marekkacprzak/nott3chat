@@ -199,3 +199,55 @@
 .chat-message .timestamp.assistant {
   text-align: left;
 }
+
+.chat-message .error-message {
+  margin-top: 8px;
+  padding: 8px;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+}
+
+.chat-message .message-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.chat-message .message-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-message .model-chip {
+  height: 20px;
+  font-size: 0.7rem;
+}
+
+.chat-message .message-actions {
+  display: flex;
+  opacity: 0;
+  transition: opacity 0.2s;
+  gap: 2px;
+}
+
+.chat-message .message-container:hover .message-actions,
+.chat-message .message-container .message-actions.force-visible {
+  opacity: 1;
+}
+
+.chat-message .message-actions .MuiIconButton-root {
+  padding: 4px;
+  color: #6b7280;
+}
+
+.chat-message .message-actions .MuiIconButton-root:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+  color: #374151;
+}
+
+.chat-message .regenerate-dropdown {
+  margin-left: -8px;
+}
