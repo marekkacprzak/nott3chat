@@ -135,7 +135,7 @@ namespace NotT3ChatBackend.Endpoints {
     public class ChatEndpointsMarker;
     public static class ChatEndpoints {
         public static void MapChatEndpoints(this IEndpointRouteBuilder app) {
-            app.MapHub<ChatHub>("/chat/{conversationId}").RequireAuthorization();
+            app.MapHub<ChatHub>("/chat").RequireAuthorization();
             app.MapPost("/chats/new", NewChat).RequireAuthorization();
             app.MapPost("/chats/fork", ForkChat).RequireAuthorization();
             app.MapDelete("/chats/{conversationId}", DeleteChat).RequireAuthorization();
@@ -382,18 +382,33 @@ namespace NotT3ChatBackend.Hubs {
         }
 
         public override async Task OnConnectedAsync() {
-            string convoId = Context.GetHttpContext()!.Request.RouteValues["conversationId"]!.ToString()!;
+            var user = await _userManager.GetUserAsync(Context.User ?? throw new UnauthorizedAccessException());
+            _logger.LogInformation("User {UserId} connected", user.Id);
+            await base.OnConnectedAsync();
+        }
+
+        public async Task ChooseChat(string convoId) { 
             _logger.LogInformation("User connecting to conversation: {ConversationId}", convoId);
 
-            var user = await _userManager.GetUserAsync(Context.User ?? throw new NotImplementedException());
-
             // It must be an existing conversation - retrieve it and send the existing messages
+            var user = await _userManager.GetUserAsync(Context.User ?? throw new UnauthorizedAccessException());
             var conversation = await _dbContext.GetConversationAsync(convoId, user!);
             await _dbContext.Entry(conversation).Collection(c => c.Messages).LoadAsync();
 
+            // Leave previous chat group (if any)
+            if (Context.Items.TryGetValue(Context.ConnectionId, out var prevConvoId)) { 
+                await Groups.RemoveFromGroupAsync(Context.ConnectionId, prevConvoId!.ToString()!);
+                _logger.LogInformation("User {UserId} left chat {PreviousChatId}", user!.Id, prevConvoId!.ToString());
+            }
+
             _logger.LogInformation("Sending conversation history with {MessageCount} messages", conversation.Messages.Count);
             // Send out the messages
-            await Clients.Client(Context.ConnectionId).SendAsync("ConversationHistory", conversation.Messages.OrderBy(m => m.Index).Select(m => new NotT3MessageDTO(m)).ToList());
+            await Clients.Client(Context.ConnectionId).SendAsync("ConversationHistory", convoId, conversation.Messages.OrderBy(m => m.Index).Select(m => new NotT3MessageDTO(m)).ToList());
+
+            var addToGroup = async () => {
+                await Groups.AddToGroupAsync(Context.ConnectionId, convoId);
+                Context.Items[Context.ConnectionId] = convoId;
+            };
 
             // TODO: consider race condition?
             // Check if we're in the middle of a message
@@ -402,9 +417,9 @@ namespace NotT3ChatBackend.Hubs {
                 if (_memoryCache.TryGetValue(convoId, out StreamingMessage? currentMsg)) {
                     await currentMsg!.semaphore.WaitAsync();
                     try {
-                        await Clients.Client(Context.ConnectionId).SendAsync("BeginAssistantMessage", DateTime.UtcNow.ToString()); // Store that in the cache too?
-                        await Clients.Client(Context.ConnectionId).SendAsync("NewAssistantPart", currentMsg.sbMessage.ToString());
-                        await Groups.AddToGroupAsync(Context.ConnectionId, convoId);
+                        await Clients.Client(Context.ConnectionId).SendAsync("BeginAssistantMessage", convoId, new NotT3MessageDTO(currentMsg.message));
+                        await Clients.Client(Context.ConnectionId).SendAsync("NewAssistantPart", convoId, currentMsg.sbMessage.ToString());
+                        await addToGroup();
                         _logger.LogInformation("User joined streaming conversation");
                     }
                     finally {
@@ -413,7 +428,7 @@ namespace NotT3ChatBackend.Hubs {
                 }
             }
             else {
-                await Groups.AddToGroupAsync(Context.ConnectionId, convoId);
+                await addToGroup();
                 _logger.LogInformation("User joined conversation group");
             }
 
@@ -421,7 +436,12 @@ namespace NotT3ChatBackend.Hubs {
         }
 
         public async Task NewMessage(string model, string message) {
-            string? convoId = Context.GetHttpContext()!.Request.RouteValues["conversationId"]!.ToString()!;
+            if (!Context.Items.TryGetValue(Context.ConnectionId, out var convoIdObj)) {
+                _logger.LogWarning("User attempted to send a message without being in a conversation group");
+                return;
+            }
+
+            string convoId = convoIdObj!.ToString()!;
             _logger.LogInformation("New message received for conversation: {ConversationId}, model: {Model}", convoId, model);
 
             var user = await _userManager.GetUserAsync(Context.User ?? throw new NotImplementedException());
@@ -464,7 +484,7 @@ namespace NotT3ChatBackend.Hubs {
             _logger.LogInformation("Conversation marked as streaming and changes saved");
 
             // Send out the user & assistant messages
-            await Clients.Group(convoId).SendAsync("UserMessage", new NotT3MessageDTO(userMsg));
+            await Clients.Group(convoId).SendAsync("UserMessage", convo.Id, new NotT3MessageDTO(userMsg));
 
             var assistantMsg = new NotT3Message() {
                 Index = convo.Messages.Count,
@@ -479,8 +499,13 @@ namespace NotT3ChatBackend.Hubs {
         }
 
         public async Task RegenerateMessage(string model, string messageId) {
-            string? convoId = Context.GetHttpContext()!.Request.RouteValues["conversationId"]!.ToString()!;
-            _logger.LogInformation("New message received for conversation: {ConversationId}, model: {Model}", convoId, model);
+            if (!Context.Items.TryGetValue(Context.ConnectionId, out var convoIdObj)) {
+                _logger.LogWarning("User attempted to regenerated a message without being in a conversation group");
+                return;
+            }
+
+            string convoId = convoIdObj!.ToString()!;
+            _logger.LogInformation("Gegenerated message received for conversation: {ConversationId}, model: {Model}, messageId: {MessageId}", convoId, model, messageId);
 
             var user = await _userManager.GetUserAsync(Context.User ?? throw new NotImplementedException());
             var convo = await _dbContext.GetConversationAsync(convoId, user!);
@@ -526,10 +551,10 @@ namespace NotT3ChatBackend.Hubs {
         }
 
         private async Task GenerateAssistantMessage(string model, string convoId, NotT3Conversation convo, NotT3Message assistantMsg) {
-            await Clients.Group(convoId).SendAsync("BeginAssistantMessage", new NotT3MessageDTO(assistantMsg));
+            await Clients.Group(convoId).SendAsync("BeginAssistantMessage", convoId, new NotT3MessageDTO(assistantMsg));
             _logger.LogInformation("Starting assistant response with ID: {ResponseId}", assistantMsg.Id);
 
-            var streamingMessage = new StreamingMessage(new StringBuilder(), new SemaphoreSlim(1));
+            var streamingMessage = new StreamingMessage(new StringBuilder(),assistantMsg, new SemaphoreSlim(1));
             _memoryCache.Set(convoId, streamingMessage, TimeSpan.FromMinutes(5)); // Max expiration of 5 minutes
 
             // Create our conversation and sync
@@ -538,7 +563,7 @@ namespace NotT3ChatBackend.Hubs {
                     await streamingMessage.semaphore.WaitAsync();
                     try {
                         streamingMessage.sbMessage.Append(messagePart.Text);
-                        await Clients.Group(convoId).SendAsync("NewAssistantPart", messagePart.Text);
+                        await Clients.Group(convoId).SendAsync("NewAssistantPart", convoId, messagePart.Text);
                     }
                     finally {
                         streamingMessage.semaphore.Release();
@@ -546,7 +571,7 @@ namespace NotT3ChatBackend.Hubs {
                 },
                 OnFinished = async (data) => {
                     _logger.LogInformation("Assistant message completed for conversation: {ConversationId}", convoId);
-                    await Clients.Group(convoId).SendAsync("EndAssistantMessage", null);
+                    await Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, null);
 
                     assistantMsg.Content = streamingMessage.sbMessage.ToString();
                     _dbContext.Messages.Add(assistantMsg);
@@ -558,7 +583,7 @@ namespace NotT3ChatBackend.Hubs {
                 },
                 ExceptionOccurredHandler = async (ex) => {
                     _logger.LogError(ex, "Error during streaming for conversation: {ConversationId}", convoId);
-                    await Clients.Group(convoId).SendAsync("EndAssistantMessage", ex.Message);
+                    await Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, ex.Message);
 
                     assistantMsg.Content = streamingMessage.sbMessage.ToString();
                     assistantMsg.FinishError = ex.Message;
@@ -612,7 +637,7 @@ namespace NotT3ChatBackend.Data {
 
 namespace NotT3ChatBackend.Models {
     #region Models/StreamingMessage.cs
-    record StreamingMessage(StringBuilder sbMessage, SemaphoreSlim semaphore);
+    record StreamingMessage(StringBuilder sbMessage, NotT3Message message, SemaphoreSlim semaphore);
     #endregion
     #region Models/NotT3User.cs
     public class NotT3User : IdentityUser {

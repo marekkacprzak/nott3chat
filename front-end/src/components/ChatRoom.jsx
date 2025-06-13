@@ -14,8 +14,9 @@ import {
 import {
   Send as SendIcon,
   ExitToApp as LogoutIcon,
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
-import { useSignalR } from '../hooks/useSignalR';
+import { useSignalR } from '../contexts/SignalRContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useChats } from '../contexts/ChatContext';
 import { chatApi } from '../services/chatApi';
@@ -31,15 +32,23 @@ const ChatRoom = () => {
   const [selectedModel, setSelectedModel] = useState('');
   const messagesEndRef = useRef(null);
   const { logout } = useAuth();
-  const { addNewChat, updateChatTitle, chats, setCurrentChatId } = useChats();
+  const { addNewChat, chats, setCurrentChatId } = useChats();
   const { chatId } = useParams();
   const navigate = useNavigate();
 
   const activeChat = useMemo(() => chats.find(c => c.id == chatId), [chatId, chats]);
 
-  // Only connect to SignalR if we have a chatId
-  const { messages, sendMessage, regenerateMessage, isConnected, currentAssistantMessage, chatTitle } =
-    useSignalR(chatId);
+  // Use global SignalR connection
+  const { 
+    messages, 
+    sendMessage, 
+    regenerateMessage,
+    isConnected, 
+    isConnecting,
+    currentAssistantMessage, 
+    chooseChat,
+    reconnect 
+  } = useSignalR();
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -49,12 +58,10 @@ const ChatRoom = () => {
     scrollToBottom();
   }, [scrollToBottom, messages, currentAssistantMessage]);
 
-  // Update chat title in context when it changes via SignalR
+  // Choose chat when chatId changes
   useEffect(() => {
-    if (chatId && chatTitle && chatTitle.chatId === chatId) {
-      updateChatTitle(chatId, chatTitle.title);
-    }
-  }, [chatId, chatTitle, updateChatTitle]);
+    chooseChat(chatId).then(() => setIsCreatingChat(false));
+  }, [chatId, chooseChat]);
 
   // Update selected model to match the last message's model
   useEffect(() => {
@@ -108,7 +115,6 @@ const ChatRoom = () => {
         navigate(`/chat/${newChat.id}`);
         // Clear input and creating state
         setMessageInput('');
-        setIsCreatingChat(false);
       } catch (error) {
         console.error('Error creating new chat:', error);
         setIsCreatingChat(false);
@@ -158,13 +164,35 @@ const ChatRoom = () => {
             <Typography variant="h6" component="div" className="app-bar-title">
               {chatId && activeChat ? activeChat.title : 'New Chat'}
             </Typography>
-            {chatId && (
-              <Chip
-                label={isConnected ? 'Connected' : 'Disconnected'}
-                color={isConnected ? 'success' : 'error'}
+            <Chip
+              label={
+                isConnecting 
+                  ? 'Connecting...' 
+                  : isConnected 
+                    ? 'Connected' 
+                    : 'Disconnected'
+              }
+              color={
+                isConnecting 
+                  ? 'warning' 
+                  : isConnected 
+                    ? 'success' 
+                    : 'error'
+              }
+              variant="outlined"
+              className="connection-chip"
+            />
+            {!isConnected && !isConnecting && (
+              <Button
+                color="inherit"
+                onClick={reconnect}
+                startIcon={<RefreshIcon />}
+                size="small"
                 variant="outlined"
-                className="connection-chip"
-              />
+                sx={{ ml: 1 }}
+              >
+                Reconnect
+              </Button>
             )}
             <Button
               color="inherit"
@@ -184,11 +212,13 @@ const ChatRoom = () => {
                 {messages.length === 0 ? (
                   <Box className="empty-state">
                     <Typography variant="h6">
-                      {pendingMessage
+                      {isCreatingChat
                         ? 'Connecting to chat...'
-                        : chatId
-                          ? 'This chat is empty. Start the conversation!'
-                          : 'Start a new conversation with the assistant!'}
+                        : !isConnected && chatId
+                          ? 'Connecting to chat room...'
+                          : chatId
+                            ? 'This chat is empty. Start the conversation!'
+                            : 'Start a new conversation with the assistant!'}
                     </Typography>
                   </Box>
                 ) : (
@@ -226,7 +256,7 @@ const ChatRoom = () => {
                       (chatId && !isConnected) ||
                       !!currentAssistantMessage ||
                       isCreatingChat ||
-                      !!pendingMessage
+                      isConnecting
                     }
                   />
                 </Box>
@@ -244,17 +274,19 @@ const ChatRoom = () => {
                     variant="outlined"
                     className="message-input"
                     placeholder={
-                      pendingMessage
+                      isCreatingChat
                         ? 'Connecting and sending message...'
-                        : 'Type your message... (Markdown supported)'
+                        : !isConnected && chatId
+                          ? 'Connecting to chat room...'
+                          : 'Type your message... (Markdown supported)'
                     }
-                    value={pendingMessage || messageInput}
+                    value={isCreatingChat || messageInput}
                     onChange={(e) => setMessageInput(e.target.value)}
                     disabled={
                       (chatId && !isConnected) ||
                       !!currentAssistantMessage ||
                       isCreatingChat ||
-                      !!pendingMessage
+                      isConnecting
                     }
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
@@ -289,7 +321,7 @@ const ChatRoom = () => {
           currentChatId={chatId}
         />
       </Box>
-    </div>
+          </div>
   );
 };
 

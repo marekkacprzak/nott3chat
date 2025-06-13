@@ -163,7 +163,7 @@ To maintain sanity without TypeScript, we follow a few simple styling rules:
 - [ ] Add an easy way to specify a default user account via environment variables for local development.
 - [x] Logging
 - [ ] Move to redis for distributed cache for better synchronization & locking for actively streaming chats.
-- [ ] Fix general chat events to always stream (delete, title, new)
+- [x] Fix general chat events to always stream (delete, title, new)
 
 ---
 

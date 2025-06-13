@@ -11,6 +11,7 @@ import { CssBaseline } from '@mui/material';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ChatProvider } from './contexts/ChatContext';
 import { ModelsProvider } from './contexts/ModelsContext';
+import { SignalRProvider } from './contexts/SignalRContext';
 import LoginPage from './components/LoginPage';
 import ChatRoom from './components/ChatRoom';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -90,7 +91,9 @@ const AppRoutes = () => {
           <ProtectedRoute>
             <ModelsProvider>
               <ChatProvider>
-                <ChatRoom />
+                <SignalRProvider>
+                  <ChatRoom />
+                </SignalRProvider>
               </ChatProvider>
             </ModelsProvider>
           </ProtectedRoute>
@@ -102,7 +105,9 @@ const AppRoutes = () => {
           <ProtectedRoute>
             <ModelsProvider>
               <ChatProvider>
-                <ChatRoom />
+                <SignalRProvider>
+                  <ChatRoom />
+                </SignalRProvider>
               </ChatProvider>
             </ModelsProvider>
           </ProtectedRoute>
