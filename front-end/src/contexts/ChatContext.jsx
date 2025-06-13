@@ -1,6 +1,7 @@
 import PropTypes from 'prop-types';
 import { createContext, useContext, useState, useCallback } from 'react';
 import { chatApi } from '../services/chatApi';
+import { useNavigate } from 'react-router-dom';
 
 const ChatContext = createContext(null);
 
@@ -11,7 +12,9 @@ export const ChatProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [hasLoaded, setHasLoaded] = useState(false);
-
+  const [currentChatId, setCurrentChatId] = useState(null);
+  const navigate = useNavigate();
+  
   const loadChats = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -28,7 +31,7 @@ export const ChatProvider = ({ children }) => {
   }, []);
 
   const addNewChat = useCallback((newChat) => {
-    setChats((prev) => [newChat, ...prev]);
+    setChats((prev) => prev.some(c => c.id === newChat.id) ? prev : [newChat, ...prev]);
   }, []);
 
   const updateChatTitle = useCallback((chatId, newTitle) => {
@@ -41,16 +44,23 @@ export const ChatProvider = ({ children }) => {
     );
   }, []);
 
-  const deleteChat = useCallback(async (chatId) => {
+  const deleteChat = useCallback(async (chatId, callApi = true) => {
     try {
-      await chatApi.deleteChat(chatId);
+      if (callApi)
+        await chatApi.deleteChat(chatId);
       setChats((prev) => prev.filter(chat => chat.id !== chatId));
+      
+      // If the deleted chat is the current one, navigate to new chat
+      if (currentChatId === chatId) {
+        navigate('/chat');
+      }
+      
       return true;
     } catch (err) {
       console.error('Error deleting chat:', err);
       return false;
     }
-  }, []);
+  }, [currentChatId, navigate]);
 
   const value = {
     chats,
@@ -61,6 +71,7 @@ export const ChatProvider = ({ children }) => {
     addNewChat,
     updateChatTitle,
     deleteChat,
+    setCurrentChatId,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

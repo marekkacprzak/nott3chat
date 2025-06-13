@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import * as signalR from '@microsoft/signalr';
+import { useChats } from '../contexts/ChatContext';
 
 const serverMessageToLocal = (serverMsg, isComplete = true) => ({
   id: serverMsg.id,
@@ -26,7 +27,7 @@ export const useSignalR = (chatId) => {
   const [messages, setMessages] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [currentAssistantMessage, setCurrentAssistantMessage] = useState(null);
-  const [chatTitle, setChatTitle] = useState(null);
+  const { addNewChat, updateChatTitle, deleteChat } = useChats();
 
   useEffect(() => {
     // Clean up any existing connection first
@@ -43,8 +44,7 @@ export const useSignalR = (chatId) => {
     setIsConnected(false);
     setMessages([]);
     setCurrentAssistantMessage(null);
-    setChatTitle(null);
-
+     
     if (!chatId) {
       return;
     }
@@ -146,9 +146,14 @@ export const useSignalR = (chatId) => {
         });
 
         // Handle chat title updates
-        connection.on('ChatTitle', (title) => {
-          setChatTitle({title, chatId});
+        connection.on('ChatTitle', (titleChatId, title) => {
+          updateChatTitle(titleChatId, title);
         });
+
+        // Handle new & deleted conversations
+        connection.on('NewConversation', (convo) => addNewChat(convo));
+        connection.on('DeleteConversation', (convoId) => deleteChat(convoId, false));
+        
       })
       .catch((error) => {
         console.error('SignalR connection error:', error);
@@ -178,9 +183,11 @@ export const useSignalR = (chatId) => {
         connection.off('EndAssistantMessage');
         connection.off('RegenerateMessage');
         connection.off('ChatTitle');
+        connection.off('NewConversation');
+        connection.off('DeleteConversation');
       }
     };
-  }, [connection]);
+  }, [connection, updateChatTitle, addNewChat, deleteChat]);
 
   const sendMessage = useCallback(
     async (model, message) => {
@@ -213,7 +220,6 @@ export const useSignalR = (chatId) => {
     sendMessage,
     regenerateMessage,
     isConnected,
-    currentAssistantMessage,
-    chatTitle,
+    currentAssistantMessage
   };
 };

@@ -20,6 +20,7 @@ using NotT3ChatBackend.Endpoints;
 using LlmTornado.Code.Models;
 using NotT3ChatBackend.Utils;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.RegularExpressions;
 
 // This code is staying in one file for now as an intentional experiment for .NET 10's dotnet run app.cs feature,
 // but we are aware of the importance of separating so we are currently assigning regions to be split when the time is right.
@@ -141,13 +142,15 @@ namespace NotT3ChatBackend.Endpoints {
             app.MapGet("/chats", GetChats).RequireAuthorization();
         }
 
-        public static async Task<NoContent> DeleteChat(string conversationId, AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger) {
+        public static async Task<NoContent> DeleteChat(string conversationId, AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger, IHubContext<ChatHub> hubContext) {
             logger.LogInformation("Deleting conversation {ConversationId} for user", conversationId);
             try {
                 var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
                 var convo = await dbContext.GetConversationAsync(conversationId, user);
                 dbContext.Conversations.Remove(convo);
                 await dbContext.SaveChangesAsync();
+
+                await hubContext.Clients.All.SendAsync("DeleteConversation", convo.Id);
                 logger.LogInformation("Conversation {ConversationId} deleted successfully", conversationId);
                 return TypedResults.NoContent();
             }
@@ -157,7 +160,7 @@ namespace NotT3ChatBackend.Endpoints {
             }
         }
 
-        public static async Task<Ok<NotT3ConversationDTO>> ForkChat([FromBody] ForkChatRequestDTO request, AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger) {
+        public static async Task<Ok<NotT3ConversationDTO>> ForkChat([FromBody] ForkChatRequestDTO request, AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger, IHubContext<ChatHub> hubContext) {
             logger.LogInformation("Forking conversation {ConversationId} from message {MessageId} for user", request.ConversationId, request.MessageId);
 
             try {
@@ -177,6 +180,12 @@ namespace NotT3ChatBackend.Endpoints {
                 // Create a new conversation with the forked messages
                 logger.LogInformation("Forking conversation at index {ForkIndex} with {MessageCount} messages", forkIndex, messages.Count);
                 var newConvo = await dbContext.CreateConversationAsync(user);
+                // Copy the title from the original conversation - append (Fork), (Fork_2), ...
+                newConvo.Title = convo.Title.Contains("(Branch")
+                                        ? Regex.Replace(convo.Title, @"\(Branch(_\d+)?\)", m => $"(Branch_{(m.Groups[1].Success ? int.Parse(m.Groups[1].Value[1..]) + 1 : 2)})")
+                                        : $"{convo.Title} (Branch)";
+
+                // Fork the messages
                 var forkedMessages = messages.Take(forkIndex + 1).Select(m => new NotT3Message() {
                     Index = m.Index,
                     Role = m.Role,
@@ -190,6 +199,7 @@ namespace NotT3ChatBackend.Endpoints {
                 await dbContext.AddRangeAsync(forkedMessages);
                 await dbContext.SaveChangesAsync();
 
+                _ = hubContext.Clients.All.SendAsync("NewConversation", new NotT3ConversationDTO(newConvo));
                 logger.LogInformation("New conversation created with ID: {ConversationId}", convo.Id);
                 return TypedResults.Ok(new NotT3ConversationDTO(newConvo));
             }
@@ -215,11 +225,13 @@ namespace NotT3ChatBackend.Endpoints {
             }
         }
         
-        public static async Task<Ok<NotT3ConversationDTO>> NewChat(AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger) {
+        public static async Task<Ok<NotT3ConversationDTO>> NewChat(AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger, IHubContext<ChatHub> hubContext) {
             logger.LogInformation("Creating new conversation for user");
             try {
                 var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
                 var convo = await dbContext.CreateConversationAsync(user);
+
+                _ = hubContext.Clients.All.SendAsync("NewConversation", new NotT3ConversationDTO(convo));
                 logger.LogInformation("New conversation created with ID: {ConversationId}", convo.Id);
                 return TypedResults.Ok(new NotT3ConversationDTO(convo));
             }
@@ -443,8 +455,7 @@ namespace NotT3ChatBackend.Hubs {
                 _ = _torandoService.InitiateTitleAssignment(userMsg.Content, async response => {
                     convo.Title = response.Text[..Math.Min(40, response.Text.Length)]; // ~6 words
                     await _dbContext.SaveChangesAsync();
-                    // TODO: move this to a general listener
-                    await Clients.Group(convoId).SendAsync("ChatTitle", convo.Title);
+                    await Clients.All.SendAsync("ChatTitle", convo.Id, convo.Title);
                 });
             }
 
