@@ -11,6 +11,7 @@ import {
 import * as signalR from '@microsoft/signalr';
 import { useAuth } from './AuthContext';
 import { useChats } from './ChatContext';
+import { useNavigate } from 'react-router-dom';
 
 const SignalRContext = createContext();
 
@@ -50,9 +51,10 @@ export const SignalRProvider = ({ children }) => {
   const [connectionError, setConnectionError] = useState(null);
   const currentChatId = useRef(null);
   const isInitializing = useRef(false);
+  const navigate = useNavigate();
   
   const { isAuthenticated } = useAuth();
-  const { addNewChat, updateChatTitle, deleteChat } = useChats();
+  const { addNewChat, updateChatTitle, deleteChat, loadChats } = useChats();
   const reconnectTimeoutRef = useRef(null);
   
   // Define event handlers as stable references outside of setupEventHandlers
@@ -137,10 +139,12 @@ export const SignalRProvider = ({ children }) => {
   const handleReconnected = useCallback(() => {
     setIsConnected(true);
     setConnectionError(null);
+    // Reload chats when reconnecting to get any updates that happened while disconnected
+    loadChats();
     if (currentChatId.current) {
-      connection?.invoke('ChooseChat', currentChatId.current).catch(console.error);
+      connection?.invoke('ChooseChat', currentChatId.current).catch(() => navigate('/chat'));
     }
-  }, [connection]);
+  }, [connection, navigate, loadChats]);
 
   const handleReconnecting = useCallback(() => {
     setIsConnected(false);
@@ -217,12 +221,16 @@ export const SignalRProvider = ({ children }) => {
       setCurrentAssistantMessage(null);
       
       if (chatId) {
-        await connection.invoke('ChooseChat', chatId);
+        try {
+          await connection.invoke('ChooseChat', chatId);
+        } catch {
+          navigate('/chat');
+        }
       }
     } catch (error) {
       console.error('Error choosing chat:', error);
     }
-  }, [connection, isConnected]);
+  }, [connection, isConnected, navigate]);
 
   const sendMessage = useCallback(
     async (model, message) => {
@@ -309,8 +317,10 @@ export const SignalRProvider = ({ children }) => {
     
     // Force close any existing connection
     closeConnection();
+    // Reload chats when manually reconnecting
+    loadChats();
     initializeConnection();
-  }, [isConnecting, closeConnection, initializeConnection]);
+  }, [isConnecting, closeConnection, initializeConnection, loadChats]);
   
   // Initialize connection when authenticated
   useEffect(() => {

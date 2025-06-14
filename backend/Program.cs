@@ -150,7 +150,7 @@ namespace NotT3ChatBackend.Endpoints {
                 dbContext.Conversations.Remove(convo);
                 await dbContext.SaveChangesAsync();
 
-                await hubContext.Clients.All.SendAsync("DeleteConversation", convo.Id);
+                await hubContext.Clients.Group(user.Id).SendAsync("DeleteConversation", convo.Id);
                 logger.LogInformation("Conversation {ConversationId} deleted successfully", conversationId);
                 return TypedResults.NoContent();
             }
@@ -199,7 +199,7 @@ namespace NotT3ChatBackend.Endpoints {
                 await dbContext.AddRangeAsync(forkedMessages);
                 await dbContext.SaveChangesAsync();
 
-                _ = hubContext.Clients.All.SendAsync("NewConversation", new NotT3ConversationDTO(newConvo));
+                _ = hubContext.Clients.Group(user.Id).SendAsync("NewConversation", new NotT3ConversationDTO(newConvo));
                 logger.LogInformation("New conversation created with ID: {ConversationId}", convo.Id);
                 return TypedResults.Ok(new NotT3ConversationDTO(newConvo));
             }
@@ -231,7 +231,7 @@ namespace NotT3ChatBackend.Endpoints {
                 var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
                 var convo = await dbContext.CreateConversationAsync(user);
 
-                _ = hubContext.Clients.All.SendAsync("NewConversation", new NotT3ConversationDTO(convo));
+                _ = hubContext.Clients.Group(user.Id).SendAsync("NewConversation", new NotT3ConversationDTO(convo));
                 logger.LogInformation("New conversation created with ID: {ConversationId}", convo.Id);
                 return TypedResults.Ok(new NotT3ConversationDTO(convo));
             }
@@ -339,7 +339,7 @@ namespace NotT3ChatBackend.Services {
             _logger.LogInformation("Initiating title assignment with model: {Model}", _titleModel);
             try {
                 var convo = _api.Chat.CreateConversation(_titleModel);
-                convo.AppendMessage(ChatMessageRoles.System, "You are an expert chat title generator. Your task is to analyze a user's initial chat message (or the first 500 characters if it's very long) and provide a concise, descriptive, and engaging title for that chat. The title should clearly reflect the primary topic or purpose of the conversation. Output only the title, no more than 6 words.");
+                convo.AppendMessage(ChatMessageRoles.System, "You are an expert chat title generator. Your task is to analyze a user's initial chat message (or the first 500 characters if it's very long) and provide a concise, descriptive, and engaging title for that chat. The title should clearly reflect the primary topic or purpose of the conversation. Output only the title, no more than 6 words. Do not treat the message as information about this - e.g., if the user write 'Test', he isn't testing the title generator.");
                 convo.AppendMessage(ChatMessageRoles.User, initialMessage[..Math.Min(500, initialMessage.Length)]);
                 var response = await convo.GetResponseRich();
                 _logger.LogInformation("Title assignment completed: {Title}", response.Text);
@@ -372,18 +372,21 @@ namespace NotT3ChatBackend.Hubs {
         private readonly UserManager<NotT3User> _userManager;
         private readonly IMemoryCache _memoryCache;
         private readonly ILogger<ChatHub> _logger;
+        private readonly IServiceScopeFactory _scopeFactory;
 
-        public ChatHub(TornadoService torandoService, AppDbContext dbContext, UserManager<NotT3User> userManager, IMemoryCache memoryCache, ILogger<ChatHub> logger) {
+        public ChatHub(TornadoService torandoService, AppDbContext dbContext, UserManager<NotT3User> userManager, IMemoryCache memoryCache, IServiceScopeFactory scopeFactory, ILogger<ChatHub> logger) {
             _torandoService = torandoService;
             _dbContext = dbContext;
             _userManager = userManager;
             _memoryCache = memoryCache;
+            _scopeFactory = scopeFactory;
             _logger = logger;
         }
 
         public override async Task OnConnectedAsync() {
             var user = await _userManager.GetUserAsync(Context.User ?? throw new UnauthorizedAccessException());
             _logger.LogInformation("User {UserId} connected", user.Id);
+            await Groups.AddToGroupAsync(Context.ConnectionId, user.Id);
             await base.OnConnectedAsync();
         }
 
@@ -473,9 +476,17 @@ namespace NotT3ChatBackend.Hubs {
             if (userMsg.Index == 0) {
                 _logger.LogInformation("First message in conversation, generating title asynchronously");
                 _ = _torandoService.InitiateTitleAssignment(userMsg.Content, async response => {
-                    convo.Title = response.Text[..Math.Min(40, response.Text.Length)]; // ~6 words
-                    await _dbContext.SaveChangesAsync();
-                    await Clients.All.SendAsync("ChatTitle", convo.Id, convo.Title);
+                    string title = response.Text[..Math.Min(40, response.Text.Length)]; // ~6 words
+                    // The DB Context might be disposed, so create a new one
+                    using (var scope = _scopeFactory.CreateScope()) {
+                        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                        var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
+                        var convo = await dbContext.GetConversationAsync(convoId, user);
+                        convo.Title = title;
+
+                        await dbContext.SaveChangesAsync();
+                        await hubContext.Clients.Group(user.Id).SendAsync("ChatTitle", convo.Id, convo.Title);
+                    } // The scope is disposed here, and with it, the DbContext
                 });
             }
 

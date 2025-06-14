@@ -32,7 +32,7 @@ const ChatRoom = () => {
   const [selectedModel, setSelectedModel] = useState('');
   const messagesEndRef = useRef(null);
   const { logout } = useAuth();
-  const { addNewChat, chats, setCurrentChatId } = useChats();
+  const { addNewChat, chats, hasLoaded } = useChats();
   const { chatId } = useParams();
   const navigate = useNavigate();
 
@@ -63,6 +63,10 @@ const ChatRoom = () => {
     chooseChat(chatId).then(() => setIsCreatingChat(false));
   }, [chatId, chooseChat]);
 
+  useEffect(() => {
+    if (hasLoaded && !activeChat) navigate('/chat');
+  }, [hasLoaded, activeChat, navigate]);
+
   // Update selected model to match the last message's model
   useEffect(() => {
     if (messages.length > 0) {
@@ -76,11 +80,6 @@ const ChatRoom = () => {
       }
     }
   }, [messages]);
-
-  // Register navigation callback for chat deletion
-  useEffect(() => {
-    setCurrentChatId(chatId);
-  }, [chatId, setCurrentChatId]);
 
   // Effect to send pending message when SignalR connection is established
   useEffect(() => {
