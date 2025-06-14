@@ -222,7 +222,7 @@ const ChatRoom = () => {
                   </Box>
                 ) : (
                   <Box className="messages-container">
-                    {messages.map((message) => (
+                    {messages.map((message, index) => (
                       <ChatMessage 
                         key={message.id} 
                         message={message} 
@@ -230,6 +230,7 @@ const ChatRoom = () => {
                         onSetSelectedModel={setSelectedModel}
                         onRegenerateMessage={regenerateMessage}
                         onForkChat={forkChat}
+                        isLastMessage={index === messages.length - 1}
                       />
                     ))}
                     <div ref={messagesEndRef} />

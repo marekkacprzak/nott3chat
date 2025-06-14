@@ -10,7 +10,13 @@ import {
   Tooltip, 
   Menu, 
   MenuItem,
-  Chip
+  Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  Button
 } from '@mui/material';
 import { 
   Person, 
@@ -40,13 +46,16 @@ const ChatMessage = ({
   selectedModel, 
   onSetSelectedModel, 
   onRegenerateMessage, 
-  onForkChat 
+  onForkChat,
+  isLastMessage
 }) => {
   const { models } = useModels();
   const [regenerateMenuAnchor, setRegenerateMenuAnchor] = useState(null);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [pendingRegenerate, setPendingRegenerate] = useState(null);
   const isUser = useMemo(() => message.type === 'user', [message]);
   const isAssistant = useMemo(() => message.type === 'assistant', [message]);
-
+  
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(message.content);
   }, [message]);
@@ -55,27 +64,51 @@ const ChatMessage = ({
     onForkChat(message.id);
   }, [onForkChat, message]);
 
-  const handleRegenerateClick = useCallback(() => {
-    // Use the message's original model or fall back to selected model
-    const modelToUse = message.chatModel || selectedModel;
-    if (modelToUse) {
-      onRegenerateMessage(modelToUse, message.id);
-    }
-  }, [message.chatModel, selectedModel, onRegenerateMessage, message.id]);
-
   const handleRegenerateDropdownClick = useCallback((event) => {
     event.stopPropagation();
     setRegenerateMenuAnchor(event.currentTarget);
   }, []);
 
+  const handleRegenerate = useCallback((modelName, messageId) => {
+    if (isLastMessage) {
+      // If this is the last message, regenerate directly
+      onRegenerateMessage(modelName, messageId);
+    } else {
+      // If not the last message, show confirmation dialog
+      setPendingRegenerate({ model: modelName, messageId });
+      setConfirmDialogOpen(true);
+    }
+  }, [onRegenerateMessage, isLastMessage])
+
+  const handleRegenerateClick = useCallback(() => {
+    const modelToUse = message.chatModel || selectedModel;
+    if (!modelToUse) return;
+    
+    handleRegenerate(modelToUse, message.id);
+  }, [message.chatModel, selectedModel, handleRegenerate, message.id]);
+
   const handleRegenerateWithModel = useCallback((modelName) => {
     onSetSelectedModel(modelName);
-    onRegenerateMessage(modelName, message.id);
     setRegenerateMenuAnchor(null);
-  }, [onRegenerateMessage, message, onSetSelectedModel]);
+    
+    handleRegenerate(modelName, message.id);
+  }, [handleRegenerate, message.id, onSetSelectedModel]);
 
   const handleCloseRegenerateMenu = useCallback(() => {
     setRegenerateMenuAnchor(null);
+  }, []);
+
+  const handleConfirmRegenerate = useCallback(() => {
+    if (pendingRegenerate) {
+      onRegenerateMessage(pendingRegenerate.model, pendingRegenerate.messageId);
+    }
+    setConfirmDialogOpen(false);
+    setPendingRegenerate(null);
+  }, [pendingRegenerate, onRegenerateMessage]);
+
+  const handleCancelRegenerate = useCallback(() => {
+    setConfirmDialogOpen(false);
+    setPendingRegenerate(null);
   }, []);
 
   return (
@@ -266,6 +299,34 @@ const ChatMessage = ({
           </Paper>
         </Box>
       </Box>
+      
+      {/* Regenerate Confirmation Dialog */}
+      <Dialog
+        open={confirmDialogOpen}
+        onClose={handleCancelRegenerate}
+        aria-labelledby="regenerate-dialog-title"
+        aria-describedby="regenerate-dialog-description"
+      >
+        <DialogTitle id="regenerate-dialog-title">
+          Regenerate Message
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="regenerate-dialog-description">
+            This will regenerate this message and <strong>delete all messages that come after it</strong> in the conversation. 
+            This action cannot be undone.
+            <br /><br />
+            Are you sure you want to continue?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelRegenerate} color="primary">
+            Cancel
+          </Button>
+          <Button onClick={handleConfirmRegenerate} color="error" variant="contained">
+            Regenerate & Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 };
@@ -284,6 +345,7 @@ ChatMessage.propTypes = {
   onSetSelectedModel: PropTypes.func,
   onRegenerateMessage: PropTypes.func,
   onForkChat: PropTypes.func,
+  isLastMessage: PropTypes.bool,
 };
 
 export default ChatMessage;

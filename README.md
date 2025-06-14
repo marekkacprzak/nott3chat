@@ -98,6 +98,11 @@ dotnet publish backend/NotT3ChatBackend.csproj -c Release -o publish
 dotnet publish/NotT3ChatBackend.dll --urls http://0.0.0.0:5555
 ```
 
+> A few warnings: 
+> 1. We use MemoryCache right now for synchronization, we will use Redis in the future but this means that it only works on a single server instance, no load balancer. 
+> 2. Cors policy right now is any domain allowed, feel free to change it yourself. 
+> 3. The password requirements are very minimal, feel free to change it yourself. 
+
 ### 2. Launching the Frontend
 
 The frontend dev server will connect to the backend API.
@@ -158,11 +163,11 @@ To maintain sanity without TypeScript, we follow a few simple styling rules:
 
 - [x] Graceful error handling (e.g., 429 Too Many Requests, content filter blocks). (More or less done, can always be improved)
 - [x] Streamline adding new models via environment variables instead of code changes.
-- [ ] Abstract the database context to easily switch between providers (In-Memory, SQLite, PostgreSQL, etc.).
+- [ ] Add configuration to easily switch between db providers (In-Memory, SQLite, PostgreSQL, etc.).
 - [ ] Consider segmenting larger UI components into smaller, more focused ones.
 - [ ] Add an easy way to specify a default user account via environment variables for local development.
 - [x] Logging
-- [ ] Move to redis for distributed cache for better synchronization & locking for actively streaming chats.
+- [ ] Add configuration to move to redis for distributed cache for better synchronization & locking for actively streaming chats.
 - [x] Fix general chat events to always stream (delete, title, new)
 
 ---

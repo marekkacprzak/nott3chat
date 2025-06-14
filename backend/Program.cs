@@ -268,11 +268,12 @@ namespace NotT3ChatBackend.Services {
         private readonly string? _titleModel;
         private readonly ILogger<TornadoService> _logger;
 
-        public TornadoService(ILogger<TornadoService> logger) {
+        public TornadoService(ILogger<TornadoService> logger, IConfiguration configuration) {
             _logger = logger;
+
             var providerAuthentications = new List<ProviderAuthentication>();
             var allModels = new List<string>();
-            foreach (var (envKey, provider, vendorProvider) in new (string, LLmProviders, BaseVendorModelProvider)[] {
+            foreach (var (configKey, provider, vendorProvider) in new (string, LLmProviders, BaseVendorModelProvider)[] {
                 ("GOOGLE_API_KEY", LLmProviders.Google, ChatModel.Google),
                 ("OAI_API_KEY", LLmProviders.OpenAi, ChatModel.OpenAi),
                 ("ANTHROPIC_API_KEY", LLmProviders.Anthropic, ChatModel.Anthropic),
@@ -284,7 +285,7 @@ namespace NotT3ChatBackend.Services {
                 ("XAI_API_KEY", LLmProviders.XAi, ChatModel.XAi),
                 ("PERPLEXITY_API_KEY", LLmProviders.Perplexity, ChatModel.Perplexity),
             }) {
-                if (Environment.GetEnvironmentVariable(envKey) is string apiKey && !string.IsNullOrEmpty(apiKey)) {
+                if (configuration[configKey] is string apiKey && !string.IsNullOrEmpty(apiKey)) {
                     providerAuthentications.Add(new ProviderAuthentication(provider, apiKey));
                     allModels.AddRange(vendorProvider.AllModels.Select(m => m.Name));
                     logger.LogInformation("{Provider} API key configured", provider);
@@ -292,14 +293,13 @@ namespace NotT3ChatBackend.Services {
             }
 
             // Choose the title model - if it doesn't exist in the list of available models, then just don't
-            _titleModel = Environment.GetEnvironmentVariable("NOTT3CHAT_TITLE_MODEL");
-            if (string.IsNullOrWhiteSpace(_titleModel)) _titleModel = "gemini-2.0-flash-lite-001";
+            _titleModel = configuration["NOTT3CHAT_TITLE_MODEL"] ?? "gemini-2.0-flash-lite-001";
             if (!allModels.Contains(_titleModel)) {
                 _titleModel = null;
                 logger.LogWarning("Title model {TitleModel} not found in available models, skipping", _titleModel);
             }
 
-            if (Environment.GetEnvironmentVariable("NOTT3CHAT_MODELS_FILTER") is string modelsFilter && !string.IsNullOrEmpty(modelsFilter)) {
+            if (configuration["NOTT3CHAT_MODELS_FILTER"] is string modelsFilter && !string.IsNullOrWhiteSpace(modelsFilter)) {
                 var modelsFilterArr = modelsFilter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 allModels = [.. allModels.Where(modelsFilterArr.Contains)];
                 logger.LogInformation("Found models filter {Filter}, removing the rest", modelsFilter);
@@ -451,7 +451,7 @@ namespace NotT3ChatBackend.Hubs {
             var convo = await _dbContext.GetConversationAsync(convoId, user!);
 
             if (convo.IsStreaming) {
-                Log.Warning("Attempted to send message to streaming conversation: {ConversationId}", convoId);
+                _logger.LogWarning("Attempted to send message to streaming conversation: {ConversationId}", convoId);
                 throw new BadHttpRequestException("Conversation is already streaming, can't create a new message");
             }
 
@@ -696,15 +696,13 @@ namespace NotT3ChatBackend.Models {
 namespace NotT3ChatBackend.DTOs {
     #region DTOs/NotT3ConversationDTO.cs
     public record NotT3ConversationDTO(string Id, DateTime CreatedAt, string Title) {
-        public NotT3ConversationDTO(NotT3Conversation conversation) : this(conversation.Id, conversation.CreatedAt, conversation.Title) {
-        }
+        public NotT3ConversationDTO(NotT3Conversation conversation) : this(conversation.Id, conversation.CreatedAt, conversation.Title) { }
     }
     #endregion
 
     #region DTOs/NotT3MessageDTO.cs
     public record NotT3MessageDTO(string Id, int Index, string Role, string Content, DateTime Timestamp, string? ChatModel, string? FinishError) {
-        public NotT3MessageDTO(NotT3Message message) : this(message.Id, message.Index, message.Role.ToString().ToLower(), message.Content, message.Timestamp, message.ChatModel, message.FinishError) {
-        }
+        public NotT3MessageDTO(NotT3Message message) : this(message.Id, message.Index, message.Role.ToString().ToLower(), message.Content, message.Timestamp, message.ChatModel, message.FinishError) { }
     }
     #endregion
 
