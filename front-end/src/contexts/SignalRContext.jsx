@@ -49,88 +49,143 @@ export const SignalRProvider = ({ children }) => {
   const [currentAssistantMessage, setCurrentAssistantMessage] = useState(null);
   const [connectionError, setConnectionError] = useState(null);
   const currentChatId = useRef(null);
+  const isInitializing = useRef(false);
   
   const { isAuthenticated } = useAuth();
   const { addNewChat, updateChatTitle, deleteChat } = useChats();
   const reconnectTimeoutRef = useRef(null);
+  
+  // Define event handlers as stable references outside of setupEventHandlers
+  const handleConversationHistory = useCallback((convoId, messages) => {
+    if (convoId === currentChatId.current) {
+      setMessages(messages.map((msg) => serverMessageToLocal(msg)));
+    }
+  }, []);
+
+  const handleUserMessage = useCallback((convoId, message) => {
+    if (convoId === currentChatId.current) {
+      setMessages((prev) => replaceOrAddMessage(prev, serverMessageToLocal(message)));
+    }
+  }, []);
+
+  const handleBeginAssistantMessage = useCallback((convoId, message) => {
+    if (convoId === currentChatId.current) {
+      const newMessage = serverMessageToLocal(message, false);
+      setCurrentAssistantMessage(newMessage);
+      setMessages((prev) => replaceOrAddMessage(prev, newMessage));
+    }
+  }, []);
+
+  const handleNewAssistantPart = useCallback((convoId, text) => {
+    if (convoId === currentChatId.current) {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.type === 'assistant' && !msg.isComplete
+            ? { ...msg, content: msg.content + text }
+            : msg
+        )
+      );
+      setCurrentAssistantMessage((prev) =>
+        prev ? { ...prev, content: prev.content + text } : prev
+      );
+    }
+  }, []);
+
+  const handleEndAssistantMessage = useCallback((convoId, finishError) => {
+    if (convoId === currentChatId.current) {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.type === 'assistant' && !msg.isComplete
+            ? { ...msg, isComplete: true, finishError: finishError || null }
+            : msg
+        )
+      );
+      setCurrentAssistantMessage(null);
+    }
+  }, []);
+
+  const handleRegenerateMessage = useCallback((convoId, messageId) => {
+    if (convoId === currentChatId.current) {
+      setMessages((prev) => {
+        const messageIndex = prev.findIndex(msg => msg.id === messageId);
+        if (messageIndex >= 0) {
+          return prev.slice(0, messageIndex);
+        }
+        return prev;
+      });
+      setCurrentAssistantMessage(null);
+    }
+  }, []);
+
+  const handleChatTitle = useCallback((titleChatId, title) => {
+    updateChatTitle(titleChatId, title);
+  }, [updateChatTitle]);
+
+  const handleNewConversation = useCallback((convo) => {
+    addNewChat(convo);
+  }, [addNewChat]);
+
+  const handleDeleteConversation = useCallback(async (convoId) => {
+    await deleteChat(convoId, false);
+  }, [deleteChat]);
+
+  const handleClose = useCallback(() => {
+    setIsConnected(false);
+    setConnection(null);
+  }, []);
+
+  const handleReconnected = useCallback(() => {
+    setIsConnected(true);
+    setConnectionError(null);
+    if (currentChatId.current) {
+      connection?.invoke('ChooseChat', currentChatId.current).catch(console.error);
+    }
+  }, [connection]);
+
+  const handleReconnecting = useCallback(() => {
+    setIsConnected(false);
+  }, []);
+
   const setupEventHandlers = useCallback((conn) => {
-    // Chat-specific events (filtered by current chat)
-    conn.on('ConversationHistory', (convoId, messages) => {
-      if (convoId === currentChatId.current) {
-        setMessages(messages.map((msg) => serverMessageToLocal(msg)));
-      }
-    });
+    // Clean up any existing handlers
+    conn.off('ConversationHistory');
+    conn.off('UserMessage');
+    conn.off('BeginAssistantMessage');
+    conn.off('NewAssistantPart');
+    conn.off('EndAssistantMessage');
+    conn.off('RegenerateMessage');
+    conn.off('ChatTitle');
+    conn.off('NewConversation');
+    conn.off('DeleteConversation');
 
-    conn.on('UserMessage', (convoId, message) => {
-      if (convoId === currentChatId.current) {
-        setMessages((prev) => replaceOrAddMessage(prev, serverMessageToLocal(message)));
-      }
-    });
+    // Set up new handlers
+    conn.on('ConversationHistory', handleConversationHistory);
+    conn.on('UserMessage', handleUserMessage);
+    conn.on('BeginAssistantMessage', handleBeginAssistantMessage);
+    conn.on('NewAssistantPart', handleNewAssistantPart);
+    conn.on('EndAssistantMessage', handleEndAssistantMessage);
+    conn.on('RegenerateMessage', handleRegenerateMessage);
+    conn.on('ChatTitle', handleChatTitle);
+    conn.on('NewConversation', handleNewConversation);
+    conn.on('DeleteConversation', handleDeleteConversation);
 
-    conn.on('BeginAssistantMessage', (convoId, message) => {
-      if (convoId === currentChatId.current) {
-        const newMessage = serverMessageToLocal(message, false);
-        setCurrentAssistantMessage(newMessage);
-        setMessages((prev) => replaceOrAddMessage(prev, newMessage));
-      }
-    });
-
-    conn.on('NewAssistantPart', (convoId, text) => {
-      if (convoId === currentChatId.current) {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.type === 'assistant' && !msg.isComplete
-              ? { ...msg, content: msg.content + text }
-              : msg
-          )
-        );
-        setCurrentAssistantMessage((prev) =>
-          prev ? { ...prev, content: prev.content + text } : prev
-        );
-      }
-    });
-
-    conn.on('EndAssistantMessage', (convoId, finishError) => {
-      if (convoId === currentChatId.current) {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.type === 'assistant' && !msg.isComplete
-              ? { ...msg, isComplete: true, finishError: finishError || null }
-              : msg
-          )
-        );
-        setCurrentAssistantMessage(null);
-      }
-    });
-
-    // Global events (not filtered)
-    conn.on('ChatTitle', (titleChatId, title) => {
-      updateChatTitle(titleChatId, title);
-    });
-
-    conn.on('NewConversation', (convo) => addNewChat(convo));
-    conn.on('DeleteConversation', async (convoId) => {
-      await deleteChat(convoId, false);
-    });
-
-    conn.onclose(() => {
-      setIsConnected(false);
-      setConnection(null);
-    });
-
-    conn.onreconnected(() => {
-      setIsConnected(true);
-      setConnectionError(null);
-      // Re-choose current chat if we have one
-      if (currentChatId.current) {
-        conn.invoke('ChooseChat', currentChatId.current).catch(console.error);
-      }
-    });
-
-    conn.onreconnecting(() => {
-      setIsConnected(false);
-    });
-  }, [updateChatTitle, addNewChat, deleteChat]);
+    conn.onclose(handleClose);
+    conn.onreconnected(handleReconnected);
+    conn.onreconnecting(handleReconnecting);
+  }, [
+    handleConversationHistory,
+    handleUserMessage,
+    handleBeginAssistantMessage,
+    handleNewAssistantPart,
+    handleEndAssistantMessage,
+    handleRegenerateMessage,
+    handleChatTitle,
+    handleNewConversation,
+    handleDeleteConversation,
+    handleClose,
+    handleReconnected,
+    handleReconnecting,
+  ]);
 
   const closeConnection = useCallback(() => {
     if (connection) {
@@ -142,6 +197,7 @@ export const SignalRProvider = ({ children }) => {
     setMessages([]);
     setCurrentAssistantMessage(null);
     setConnectionError(null);
+    isInitializing.current = false;
     
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
@@ -170,7 +226,6 @@ export const SignalRProvider = ({ children }) => {
 
   const sendMessage = useCallback(
     async (model, message) => {
-      console.log(currentChatId.current);
       if (connection && isConnected && currentChatId.current) {
         try {
           await connection.invoke('NewMessage', model, message);
@@ -196,8 +251,9 @@ export const SignalRProvider = ({ children }) => {
   );
 
   const initializeConnection = useCallback(() => {
-    if (connection) return;
+    if (connection || isInitializing.current) return;
 
+    isInitializing.current = true;
     setIsConnecting(true);
     setConnectionError(null);
 
@@ -235,11 +291,13 @@ export const SignalRProvider = ({ children }) => {
         setIsConnected(true);
         setIsConnecting(false);
         setConnectionError(null);
+        isInitializing.current = false;
       })
       .catch((error) => {
         console.error('SignalR connection error:', error);
         setConnectionError(error.message);
         setIsConnecting(false);
+        isInitializing.current = false;
         if (error.statusCode === 401) {
           console.error('SignalR authentication failed - cookies may not be properly configured');
         }
@@ -247,11 +305,12 @@ export const SignalRProvider = ({ children }) => {
   }, [connection, setupEventHandlers]);
 
   const reconnect = useCallback(() => {
-    if (!isConnecting && !isConnected) {
-      closeConnection();
-      initializeConnection();
-    }
-  }, [isConnecting, isConnected, closeConnection, initializeConnection]);
+    if (isConnecting) return; // Already connecting, don't start another
+    
+    // Force close any existing connection
+    closeConnection();
+    initializeConnection();
+  }, [isConnecting, closeConnection, initializeConnection]);
   
   // Initialize connection when authenticated
   useEffect(() => {
@@ -261,6 +320,16 @@ export const SignalRProvider = ({ children }) => {
       closeConnection();
     }
   }, [isAuthenticated, initializeConnection, closeConnection, connection]);
+
+  // Clean up connection on page unload
+  useEffect(() => {
+    return () => {
+      // Also clean up when component unmounts
+      if (connection) {
+        connection.stop();
+      }
+    };
+  }, [connection]);
 
   
   const value = useMemo(() => ({
