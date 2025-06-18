@@ -88,6 +88,7 @@ namespace NotT3ChatBackend {
 
             builder.Services.AddSignalR();
             builder.Services.AddSingleton<TornadoService>();
+            builder.Services.AddScoped<StreamingService>();
 
             var app = builder.Build();
 
@@ -351,6 +352,78 @@ namespace NotT3ChatBackend.Services {
             }
         }
     }
+    #endregion
+
+    #region Services/StreamingService.cs
+    public class StreamingService {
+        private readonly TornadoService _tornadoService;
+        private readonly IServiceScopeFactory _scopeFactory;
+        private readonly IMemoryCache _memoryCache;
+        private readonly ILogger<StreamingService> _logger;
+        public StreamingService(TornadoService tornadoService, IServiceScopeFactory scopeFactory, IMemoryCache memoryCache, ILogger<StreamingService> logger) {
+            _tornadoService = tornadoService;
+            _scopeFactory = scopeFactory;
+            _memoryCache = memoryCache;
+            _logger = logger;
+        }
+        internal async Task StartStreaming(string model, ICollection<NotT3Message> messages, string convoId, NotT3Message assistantMsg, StreamingMessage streamingMessage, NotT3User user) {
+            using var scope = _scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
+            var convo = await dbContext.GetConversationAsync(convoId, user);
+
+            await _tornadoService.InitiateConversationAsync(model, messages, new ExtendedChatStreamEventHandler() {
+                MessagePartHandler = async (messagePart) => {
+                    await streamingMessage.semaphore.WaitAsync();
+                    try {
+                        streamingMessage.sbMessage.Append(messagePart.Text);
+                        await hubContext.Clients.Group(convoId).SendAsync("NewAssistantPart", convoId, messagePart.Text);
+                    }
+                    finally {
+                        streamingMessage.semaphore.Release();
+                    }
+                },
+                OnFinished = async (data) => {
+                    _logger.LogInformation("Assistant message completed for conversation: {ConversationId}", convoId);
+                    await hubContext.Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, null);
+
+                    assistantMsg.Content = streamingMessage.sbMessage.ToString();
+                    dbContext.Messages.Add(assistantMsg);
+                    convo.IsStreaming = false;
+                    await dbContext.SaveChangesAsync();
+                    _logger.LogInformation("Assistant message saved to database");
+
+                    _memoryCache.Set(convoId, streamingMessage, TimeSpan.FromMinutes(1));
+                },
+                ExceptionOccurredHandler = async (ex) => {
+                    _logger.LogError(ex, "Error during streaming for conversation: {ConversationId}", convoId);
+                    await hubContext.Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, ex.Message);
+
+                    assistantMsg.Content = streamingMessage.sbMessage.ToString();
+                    assistantMsg.FinishError = ex.Message;
+                    dbContext.Messages.Add(assistantMsg);
+                    convo.IsStreaming = false;
+                    await dbContext.SaveChangesAsync();
+
+                    _memoryCache.Remove(convoId);
+                }
+            });
+        }
+
+        internal async Task StreamTitle(string convoId, NotT3Message userMsg, NotT3User user) {
+            using var scope = _scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
+            var convo = await dbContext.GetConversationAsync(convoId, user);
+
+            await _tornadoService.InitiateTitleAssignment(userMsg.Content, async response => {
+                string title = response.Text[..Math.Min(40, response.Text.Length)]; // ~6 words
+                convo.Title = title;
+                await dbContext.SaveChangesAsync();
+                await hubContext.Clients.Group(user.Id).SendAsync("ChatTitle", convo.Id, convo.Title);
+            });
+        }
+    }
 }
 #endregion
 
@@ -367,19 +440,17 @@ namespace NotT3ChatBackend.DTOs {
 #region Hubs/ChatHub.cs
 namespace NotT3ChatBackend.Hubs {
     public class ChatHub : Hub {
-        private readonly TornadoService _torandoService;
+        private readonly StreamingService _streamingService;
         private readonly AppDbContext _dbContext;
         private readonly UserManager<NotT3User> _userManager;
         private readonly IMemoryCache _memoryCache;
         private readonly ILogger<ChatHub> _logger;
-        private readonly IServiceScopeFactory _scopeFactory;
-
-        public ChatHub(TornadoService torandoService, AppDbContext dbContext, UserManager<NotT3User> userManager, IMemoryCache memoryCache, IServiceScopeFactory scopeFactory, ILogger<ChatHub> logger) {
-            _torandoService = torandoService;
+        
+        public ChatHub(AppDbContext dbContext, UserManager<NotT3User> userManager, IMemoryCache memoryCache, StreamingService streamingService, ILogger<ChatHub> logger) {
             _dbContext = dbContext;
             _userManager = userManager;
             _memoryCache = memoryCache;
-            _scopeFactory = scopeFactory;
+            _streamingService = streamingService;
             _logger = logger;
         }
 
@@ -475,19 +546,7 @@ namespace NotT3ChatBackend.Hubs {
             // First message? Get a title
             if (userMsg.Index == 0) {
                 _logger.LogInformation("First message in conversation, generating title asynchronously");
-                _ = _torandoService.InitiateTitleAssignment(userMsg.Content, async response => {
-                    string title = response.Text[..Math.Min(40, response.Text.Length)]; // ~6 words
-                    // The DB Context might be disposed, so create a new one
-                    using (var scope = _scopeFactory.CreateScope()) {
-                        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                        var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
-                        var convo = await dbContext.GetConversationAsync(convoId, user);
-                        convo.Title = title;
-
-                        await dbContext.SaveChangesAsync();
-                        await hubContext.Clients.Group(user.Id).SendAsync("ChatTitle", convo.Id, convo.Title);
-                    } // The scope is disposed here, and with it, the DbContext
-                });
+                _ = _streamingService.StreamTitle(convoId, userMsg, user);
             }
 
             convo.IsStreaming = true;
@@ -506,7 +565,7 @@ namespace NotT3ChatBackend.Hubs {
                 UserId = user!.Id,
                 ChatModel = model
             };
-            await GenerateAssistantMessage(model, convoId, convo, assistantMsg);
+            await GenerateAssistantMessage(model, convoId, convo, assistantMsg, user!);
         }
 
         public async Task RegenerateMessage(string model, string messageId) {
@@ -558,10 +617,10 @@ namespace NotT3ChatBackend.Hubs {
             convo.IsStreaming = true;
             await _dbContext.SaveChangesAsync();
             _logger.LogInformation("Conversation marked as streaming and changes saved");
-            await GenerateAssistantMessage(model, convoId, convo, lastMessage);
+            await GenerateAssistantMessage(model, convoId, convo, lastMessage, user!);
         }
 
-        private async Task GenerateAssistantMessage(string model, string convoId, NotT3Conversation convo, NotT3Message assistantMsg) {
+        private async Task GenerateAssistantMessage(string model, string convoId, NotT3Conversation convo, NotT3Message assistantMsg, NotT3User user) {
             await Clients.Group(convoId).SendAsync("BeginAssistantMessage", convoId, new NotT3MessageDTO(assistantMsg));
             _logger.LogInformation("Starting assistant response with ID: {ResponseId}", assistantMsg.Id);
 
@@ -569,42 +628,7 @@ namespace NotT3ChatBackend.Hubs {
             _memoryCache.Set(convoId, streamingMessage, TimeSpan.FromMinutes(5)); // Max expiration of 5 minutes
 
             // Create our conversation and sync
-            await _torandoService.InitiateConversationAsync(model, convo.Messages, new ExtendedChatStreamEventHandler() {
-                MessagePartHandler = async (messagePart) => {
-                    await streamingMessage.semaphore.WaitAsync();
-                    try {
-                        streamingMessage.sbMessage.Append(messagePart.Text);
-                        await Clients.Group(convoId).SendAsync("NewAssistantPart", convoId, messagePart.Text);
-                    }
-                    finally {
-                        streamingMessage.semaphore.Release();
-                    }
-                },
-                OnFinished = async (data) => {
-                    _logger.LogInformation("Assistant message completed for conversation: {ConversationId}", convoId);
-                    await Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, null);
-
-                    assistantMsg.Content = streamingMessage.sbMessage.ToString();
-                    _dbContext.Messages.Add(assistantMsg);
-                    convo.IsStreaming = false;
-                    await _dbContext.SaveChangesAsync();
-                    _logger.LogInformation("Assistant message saved to database");
-
-                    _memoryCache.Set(convoId, streamingMessage, TimeSpan.FromMinutes(1));
-                },
-                ExceptionOccurredHandler = async (ex) => {
-                    _logger.LogError(ex, "Error during streaming for conversation: {ConversationId}", convoId);
-                    await Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, ex.Message);
-
-                    assistantMsg.Content = streamingMessage.sbMessage.ToString();
-                    assistantMsg.FinishError = ex.Message;
-                    _dbContext.Messages.Add(assistantMsg);
-                    convo.IsStreaming = false;
-                    await _dbContext.SaveChangesAsync();
-
-                    _memoryCache.Remove(convoId);
-                }
-            });
+            _ = _streamingService.StartStreaming(model, convo.Messages, convoId, assistantMsg, streamingMessage, user);
         }
     }
 }
@@ -648,7 +672,7 @@ namespace NotT3ChatBackend.Data {
 
 namespace NotT3ChatBackend.Models {
     #region Models/StreamingMessage.cs
-    record StreamingMessage(StringBuilder sbMessage, NotT3Message message, SemaphoreSlim semaphore);
+    public record StreamingMessage(StringBuilder sbMessage, NotT3Message message, SemaphoreSlim semaphore);
     #endregion
     #region Models/NotT3User.cs
     public class NotT3User : IdentityUser {
