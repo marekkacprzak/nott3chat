@@ -70,7 +70,8 @@ The backend runs on port `http://localhost:5128` by default in debug mode.
 The backend reads the configuration from the environment variables, here are the options:
 
 ```bash
-# Options are GOOGLE_API_KEY, OAI_API_KEY, ANTHROPIC_API_KEY, COHERE_API_KEY, GROQ_API_KEY, DEEPSEEK_API_KEY, MISTRAL_API_KEY, XAI_API_KEY, PERPLEXITY_API_KEY
+# Options are GOOGLE_API_KEY, OAI_API_KEY, OPENROUTER_API_KEY, ANTHROPIC_API_KEY, COHERE_API_KEY, GROQ_API_KEY, DEEPSEEK_API_KEY, MISTRAL_API_KEY, XAI_API_KEY, PERPLEXITY_API_KEY
+# You can put in multiple options
 export XXXXXX_API_KEY=...
 
 # Optional: If you don't specify this, it will display all the available models from the providers that you specified an API key for

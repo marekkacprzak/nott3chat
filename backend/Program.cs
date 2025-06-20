@@ -278,6 +278,7 @@ namespace NotT3ChatBackend.Services {
                 ("GOOGLE_API_KEY", LLmProviders.Google, ChatModel.Google),
                 ("OAI_API_KEY", LLmProviders.OpenAi, ChatModel.OpenAi),
                 ("ANTHROPIC_API_KEY", LLmProviders.Anthropic, ChatModel.Anthropic),
+                ("OPENROUTER_API_KEY", LLmProviders.OpenRouter, ChatModel.OpenRouter),
                 // ("AZURE_OAI_API_KEY", LLmProviders.AzureOpenAi, ChatModel.OpenAi), // Figure out how this conflicts with OpenAi
                 ("COHERE_API_KEY", LLmProviders.Cohere, ChatModel.Cohere),
                 ("GROQ_API_KEY", LLmProviders.Groq, ChatModel.Groq),
