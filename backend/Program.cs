@@ -122,6 +122,10 @@ namespace NotT3ChatBackend {
 
             app.MapGet("/health", () => TypedResults.Ok());
             app.MapIdentityApi<NotT3User>();
+            app.MapPost("/logout", async (SignInManager<NotT3User> signInManager) => {
+                await signInManager.SignOutAsync();
+                return TypedResults.Ok();
+            }).RequireAuthorization();
             app.MapModelEndpoints();
             app.MapChatEndpoints();
 
