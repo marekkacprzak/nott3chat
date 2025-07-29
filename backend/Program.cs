@@ -31,7 +31,7 @@ namespace NotT3ChatBackend {
     public class Program {
         public static void Main(string[] args) {
             var builder = WebApplication.CreateBuilder(args);
-
+            
             // Configure Serilog
             Log.Logger = new LoggerConfiguration()
                 .WriteTo.Console()
@@ -271,7 +271,7 @@ namespace NotT3ChatBackend.Services {
 
         public TornadoService(ILogger<TornadoService> logger, IConfiguration configuration) {
             _logger = logger;
-
+            
             var providerAuthentications = new List<ProviderAuthentication>();
             var allModels = new List<string>();
             foreach (var (configKey, provider, vendorProvider) in new (string, LLmProviders, BaseVendorModelProvider)[] {
@@ -405,7 +405,6 @@ namespace NotT3ChatBackend.Services {
                     dbContext.Messages.Add(assistantMsg);
                     convo.IsStreaming = false;
                     await dbContext.SaveChangesAsync();
-
                     _memoryCache.Remove(convoId);
                 }
             });
@@ -423,16 +422,6 @@ namespace NotT3ChatBackend.Services {
                 await dbContext.SaveChangesAsync();
                 await hubContext.Clients.Group(user.Id).SendAsync("ChatTitle", convo.Id, convo.Title);
             });
-        }
-    }
-}
-#endregion
-
-#region DTOs/ChatModelDTO.cs
-namespace NotT3ChatBackend.DTOs {
-    public record ChatModelDTO(string Name, string Provider) {
-        public ChatModelDTO(ChatModel model) : this(model.Name, model.Provider.ToString()) {
-            // This is a simple DTO, so we don't need to do anything else
         }
     }
 }
@@ -672,9 +661,6 @@ namespace NotT3ChatBackend.Data {
 #endregion
 
 namespace NotT3ChatBackend.Models {
-    #region Models/StreamingMessage.cs
-    public record StreamingMessage(StringBuilder sbMessage, NotT3Message message, SemaphoreSlim semaphore);
-    #endregion
     #region Models/NotT3User.cs
     public class NotT3User : IdentityUser {
         // Navigators
@@ -734,12 +720,23 @@ namespace NotT3ChatBackend.DTOs {
     #region DTOs/ForkChatRequestDTO.cs
     public record ForkChatRequestDTO(string ConversationId, string MessageId);
     #endregion
+
+    #region DTOs/ChatModelDTO.cs
+    public record ChatModelDTO(string Name, string Provider) {
+        public ChatModelDTO(ChatModel model) : this(model.Name, model.Provider.ToString()) {
+            // This is a simple DTO, so we don't need to do anything else
+        }
+    }
+    #endregion
 }
 
-#region Utils/ExtendedChatStreamEventHandler.cs
 namespace NotT3ChatBackend.Utils {
+    #region Utils/ExtendedChatStreamEventHandler.cs
     public class ExtendedChatStreamEventHandler : ChatStreamEventHandler {
         public Func<Exception, ValueTask>? ExceptionOccurredHandler { get; set; }
     }
+    #endregion
+    #region Utils/StreamingMessage.cs
+    public record StreamingMessage(StringBuilder sbMessage, NotT3Message message, SemaphoreSlim semaphore);
+    #endregion
 }
-#endregion
