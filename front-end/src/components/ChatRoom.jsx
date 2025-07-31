@@ -240,6 +240,31 @@ const ChatRoom = () => {
 
               {/* Input Area */}
               <Box className="input-area">
+                {/* Resize Handle */}
+                <Box 
+                  className="resize-handle"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    const startY = e.clientY;
+                    const inputArea = e.target.parentElement;
+                    const startHeight = inputArea.offsetHeight;
+                    
+                    const handleMouseMove = (moveEvent) => {
+                      const deltaY = startY - moveEvent.clientY;
+                      const newHeight = Math.max(120, startHeight + deltaY);
+                      inputArea.style.height = `${newHeight}px`;
+                    };
+                    
+                    const handleMouseUp = () => {
+                      document.removeEventListener('mousemove', handleMouseMove);
+                      document.removeEventListener('mouseup', handleMouseUp);
+                    };
+                    
+                    document.addEventListener('mousemove', handleMouseMove);
+                    document.addEventListener('mouseup', handleMouseUp);
+                  }}
+                />
+                
                 {/* Model Selector Row */}
                 <Box className="model-selector-row">
                   <Typography
@@ -270,7 +295,7 @@ const ChatRoom = () => {
                   <TextField
                     fullWidth
                     multiline
-                    maxRows={4}
+                    minRows={1}
                     variant="outlined"
                     className="message-input"
                     placeholder={
@@ -292,6 +317,14 @@ const ChatRoom = () => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
                         handleSendMessage(e);
+                      }
+                    }}
+                    slotProps={{
+                      input: {
+                        style: { 
+                          height: '100%',
+                          alignItems: 'stretch'
+                        }
                       }
                     }}
                   />

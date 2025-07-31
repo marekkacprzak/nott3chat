@@ -92,6 +92,26 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 120px;
+  height: 140px;
+  position: relative;
+  resize: none;
+}
+
+.chat-room .resize-handle {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  background: transparent;
+  z-index: 10;
+}
+
+.chat-room .resize-handle:hover {
+  background: rgba(25, 118, 210, 0.1);
+  border-top: 2px solid #1976d2;
 }
 
 .chat-room .model-selector-row {
@@ -109,11 +129,21 @@
 .chat-room .message-input-row {
   display: flex;
   gap: 8px;
-  align-items: flex-end;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 
 .chat-room .message-input .MuiOutlinedInput-root {
   border-radius: 8px;
+  height: 100%;
+}
+
+.chat-room .message-input .MuiOutlinedInput-root textarea {
+  resize: none !important;
+  min-height: 40px !important;
+  height: 100% !important;
+  max-height: none !important;
 }
 
 .chat-room .send-button {

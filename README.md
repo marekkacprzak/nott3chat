@@ -31,7 +31,8 @@ This is far from just a "hello world" chat. We've packed in some serious feature
 *   **⚡ Blazing-Fast Real-Time Chat:** Built with the magic of **[SignalR](https://dotnet.microsoft.com/apps/aspnet/signalr)**, messages stream in real-time.
 *   **🔄 Advanced Stream Resumption:** Did you close your browser tab mid-stream? No problem. Re-open the chat, and the stream will pick up right where it left off.
 *   **🤝 Multi-Session Sync:** Open the same chat in multiple windows or on different devices, and watch the messages stream in perfect sync across all of them.
-*   **🔐 Authentication:** A login system to keep your chats private.
+*   **� Resizable Message Input:** Drag the top edge of the message input area to resize it for comfortable long-form writing - no height limits!
+*   **�🔐 Authentication:** A login system to keep your chats private.
 *   **📜 Chat History:** All your conversations are saved and can be revisited anytime.
 
 ## 🛠️ Tech Stack & How It Was Built
@@ -145,6 +146,7 @@ Here's a non-exhaustive list of what's planned when I get around to it:
 - [x] Delete chats
 - [ ] Delete individual messages?
 - [x] Intelligent, automatic naming for new chats
+- [x] Resizable message input area with drag-to-resize functionality
 - [ ] Search through threads
 - [ ] Make it prettier?
 - [ ] Thinking models
