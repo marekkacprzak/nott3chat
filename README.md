@@ -5,6 +5,9 @@
 
 Welcome to **NotT3Chat**, a fully-featured, real-time chat application built for the [cloneathon.t3.chat](https://cloneathon.t3.chat). This project serves as a testament to the raw power and elegance of C# and ASP.NET Core, proving that you don't need TypeScript to build amazing, modern web applications. (Sorry, Theo.)
 
+> **🔥 NEW: Now powered by Azure OpenAI with credential-based authentication!**  
+> See [Azure OpenAI Setup Guide](AZURE_SETUP.md) for configuration details.
+
 > Too much bullshit just take me to [Getting Started](#-getting-started).
 
 ### Check out the demo!
@@ -24,7 +27,7 @@ Why build another chat app? Two reasons:
 
 This is far from just a "hello world" chat. We've packed in some serious features:
 
-*   **🤖 Multi-LLM Support:** Seamlessly switch between different models and providers (currently OpenAI and Google, but the rest are just one line of code away).
+*   **🤖 Azure OpenAI Integration:** Seamlessly integrated with Azure OpenAI services using credential-based authentication (no API keys required).
 *   **⚡ Blazing-Fast Real-Time Chat:** Built with the magic of **[SignalR](https://dotnet.microsoft.com/apps/aspnet/signalr)**, messages stream in real-time.
 *   **🔄 Advanced Stream Resumption:** Did you close your browser tab mid-stream? No problem. Re-open the chat, and the stream will pick up right where it left off.
 *   **🤝 Multi-Session Sync:** Open the same chat in multiple windows or on different devices, and watch the messages stream in perfect sync across all of them.
@@ -41,7 +44,7 @@ This project was a collaboration between human and machine.
 ![SignalR](https://img.shields.io/badge/SignalR-realtime-F76423?style=for-the-badge)
 ![SQLite](https://img.shields.io/badge/SQLite-3-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
 
-The backend was primarily built by me, with some expert consulting from **Sonnet 4**. The goal was a lean, powerful, and scalable foundation using ASP.NET Core 8. The multi-LLM support is powered by the fantastic **[LlmTornado.Toolkit](https://github.com/lofcz/LlmTornado)** library – a huge shout-out for making the integration so seamless. Hoping to move to ASP.NET Core 10 soon. 
+The backend was primarily built by me, with some expert consulting from **Sonnet 4**. The goal was a lean, powerful, and scalable foundation using ASP.NET Core 8. The application now uses **Azure OpenAI** services with credential-based authentication for secure, enterprise-grade AI integration. Hoping to move to ASP.NET Core 10 soon. 
 
 ### Frontend
 ![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
@@ -67,19 +70,22 @@ The backend runs on port `http://localhost:5128` by default in debug mode.
 
 **Configuration:**
 
-The backend reads the configuration from the environment variables, here are the options:
+The backend now uses Azure OpenAI with credential-based authentication. See the [Azure OpenAI Setup Guide](AZURE_SETUP.md) for detailed configuration instructions.
 
-```bash
-# Options are GOOGLE_API_KEY, OAI_API_KEY, OPENROUTER_API_KEY, ANTHROPIC_API_KEY, COHERE_API_KEY, GROQ_API_KEY, DEEPSEEK_API_KEY, MISTRAL_API_KEY, XAI_API_KEY, PERPLEXITY_API_KEY
-# You can put in multiple options
-export XXXXXX_API_KEY=...
+**Quick Setup:**
 
-# Optional: If you don't specify this, it will display all the available models from the providers that you specified an API key for
-export NOTT3CHAT_MODELS_FILTER=gpt-4o-mini,gemini-2.0-flash-001,gemini-2.0-flash-lite-001
+1. **Azure OpenAI Resource**: Create an Azure OpenAI resource and deploy your models
+2. **Authentication**: Configure authentication (Azure CLI, Managed Identity, or Service Principal)
+3. **Configuration**: Update `appsettings.json` with your Azure OpenAI endpoint and model names
 
-# Optional: Specify which model should be used for generating titles for chats. Default to gemini-2.0-flash-lite-001
-# If the specified model doesn't have an API key matching, then it will just assign "New Chat" to all models
-export NOTT3CHAT_TITLE_MODEL=gemini-2.0-flash-lite-001
+```json
+{
+  "AzureOpenAI": {
+    "Endpoint": "https://your-resource-name.openai.azure.com/",
+    "Models": ["gpt-4o-mini", "gpt-4o", "gpt-35-turbo"],
+    "TitleModel": "gpt-4o-mini"
+  }
+}
 ```
 
 **Debug Mode:**

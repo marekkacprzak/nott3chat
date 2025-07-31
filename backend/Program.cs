@@ -1,11 +1,6 @@
-using LlmTornado.Chat.Models;
-using LlmTornado.Code;
-using LlmTornado;
-using LlmTornado.Chat;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
-using System.Text;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using System.ComponentModel.DataAnnotations;
@@ -17,10 +12,13 @@ using NotT3ChatBackend.Hubs;
 using NotT3ChatBackend.DTOs;
 using Microsoft.AspNetCore.Http.HttpResults;
 using NotT3ChatBackend.Endpoints;
-using LlmTornado.Code.Models;
 using NotT3ChatBackend.Utils;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.RegularExpressions;
+using Azure.AI.OpenAI;
+using Azure.Identity;
+using OpenAI.Chat;
+using System.Text;
 
 // This code is staying in one file for now as an intentional experiment for .NET 10's dotnet run app.cs feature,
 // but we are aware of the importance of separating so we are currently assigning regions to be split when the time is right.
@@ -87,7 +85,7 @@ namespace NotT3ChatBackend {
             });
 
             builder.Services.AddSignalR();
-            builder.Services.AddSingleton<TornadoService>();
+            builder.Services.AddSingleton<AzureOpenAIService>();
             builder.Services.AddScoped<StreamingService>();
 
             var app = builder.Build();
@@ -256,8 +254,8 @@ namespace NotT3ChatBackend.Endpoints {
             app.MapGet("/models", GetAvailableModels);
         }
 
-        public static Ok<ICollection<ChatModelDTO>> GetAvailableModels(TornadoService tornadoService, ILogger<ModelEndpointsMarker> logger) {
-            var models = tornadoService.GetAvailableModels();
+        public static Ok<ICollection<ChatModelDTO>> GetAvailableModels(AzureOpenAIService azureOpenAIService, ILogger<ModelEndpointsMarker> logger) {
+            var models = azureOpenAIService.GetAvailableModels();
             logger.LogInformation("Retrieved {Count} available models", models.Count);
             return TypedResults.Ok(models);
         }
@@ -266,77 +264,71 @@ namespace NotT3ChatBackend.Endpoints {
 }
 
 namespace NotT3ChatBackend.Services {
-    #region Services/TorandoService.cs
-    public class TornadoService {
-        private readonly TornadoApi _api;
+    #region Services/AzureOpenAIService.cs
+    public class AzureOpenAIService {
+        private readonly AzureOpenAIClient _client;
         private readonly string[] _models;
         private readonly string? _titleModel;
-        private readonly ILogger<TornadoService> _logger;
+        private readonly ILogger<AzureOpenAIService> _logger;
 
-        public TornadoService(ILogger<TornadoService> logger, IConfiguration configuration) {
+        public AzureOpenAIService(ILogger<AzureOpenAIService> logger, IConfiguration configuration) {
             _logger = logger;
             
-            var providerAuthentications = new List<ProviderAuthentication>();
-            var allModels = new List<string>();
-            foreach (var (configKey, provider, vendorProvider) in new (string, LLmProviders, BaseVendorModelProvider)[] {
-                ("GOOGLE_API_KEY", LLmProviders.Google, ChatModel.Google),
-                ("OAI_API_KEY", LLmProviders.OpenAi, ChatModel.OpenAi),
-                ("ANTHROPIC_API_KEY", LLmProviders.Anthropic, ChatModel.Anthropic),
-                ("OPENROUTER_API_KEY", LLmProviders.OpenRouter, ChatModel.OpenRouter),
-                // ("AZURE_OAI_API_KEY", LLmProviders.AzureOpenAi, ChatModel.OpenAi), // Figure out how this conflicts with OpenAi
-                ("COHERE_API_KEY", LLmProviders.Cohere, ChatModel.Cohere),
-                ("GROQ_API_KEY", LLmProviders.Groq, ChatModel.Groq),
-                ("DEEPSEEK_API_KEY", LLmProviders.DeepSeek, ChatModel.DeepSeek),
-                ("MISTRAL_API_KEY", LLmProviders.Mistral, ChatModel.Mistral),
-                ("XAI_API_KEY", LLmProviders.XAi, ChatModel.XAi),
-                ("PERPLEXITY_API_KEY", LLmProviders.Perplexity, ChatModel.Perplexity),
-            }) {
-                if (configuration[configKey] is string apiKey && !string.IsNullOrEmpty(apiKey)) {
-                    providerAuthentications.Add(new ProviderAuthentication(provider, apiKey));
-                    allModels.AddRange(vendorProvider.AllModels.Select(m => m.Name));
-                    logger.LogInformation("{Provider} API key configured", provider);
-                }
+            var endpoint = configuration["AzureOpenAI:Endpoint"];
+            if (string.IsNullOrEmpty(endpoint)) {
+                throw new InvalidOperationException("AzureOpenAI:Endpoint configuration is required");
             }
 
-            // Choose the title model - if it doesn't exist in the list of available models, then just don't
-            _titleModel = configuration["NOTT3CHAT_TITLE_MODEL"] ?? "gemini-2.0-flash-lite-001";
-            if (!allModels.Contains(_titleModel)) {
-                _titleModel = null;
-                logger.LogWarning("Title model {TitleModel} not found in available models, skipping", _titleModel);
+            // Use DefaultAzureCredential for authentication (no API key needed)
+            var credential = new DefaultAzureCredential();
+            _client = new AzureOpenAIClient(new Uri(endpoint), credential);
+            
+            // Get models from configuration
+            var modelsConfig = configuration.GetSection("AzureOpenAI:Models").Get<string[]>();
+            _models = modelsConfig ?? ["gpt-4o-mini", "gpt-4o", "gpt-35-turbo"];
+            
+            _titleModel = configuration["AzureOpenAI:TitleModel"];
+            if (string.IsNullOrEmpty(_titleModel)) {
+                _titleModel = "gpt-4o-mini";
             }
 
-            if (configuration["NOTT3CHAT_MODELS_FILTER"] is string modelsFilter && !string.IsNullOrWhiteSpace(modelsFilter)) {
-                var modelsFilterArr = modelsFilter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                allModels = [.. allModels.Where(modelsFilterArr.Contains)];
-                logger.LogInformation("Found models filter {Filter}, removing the rest", modelsFilter);
-            }
-
-            _api = new TornadoApi(providerAuthentications);
-            _models = [.. allModels];
-            logger.LogInformation("TorandoService initialized with {ModelCount} models", _models.Length);
+            logger.LogInformation("AzureOpenAIService initialized with {ModelCount} models", _models.Length);
         }
 
         public ICollection<ChatModelDTO> GetAvailableModels() {
-            return [.. _models.Select(m => new ChatModelDTO(m))];
+            return _models.Select(m => new ChatModelDTO(m, "Azure OpenAI")).ToList();
         }
 
-        public async Task InitiateConversationAsync(string model, ICollection<NotT3Message> messages, ExtendedChatStreamEventHandler handler) {
+        public async Task InitiateConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
             _logger.LogInformation("Initiating conversation with model: {Model}, message count: {MessageCount}", model, messages.Count);
             try {
-                var convo = _api.Chat.CreateConversation(model);
-                foreach (var msg in messages)
-                    convo.AppendMessage(msg.Role, msg.Content);
-                await convo.StreamResponseRich(handler);
+                var chatClient = _client.GetChatClient(model);
+                var chatMessages = messages.Select(m => CreateChatMessage(m.Role, m.Content)).ToList();
+                
+                var response = chatClient.CompleteChatStreamingAsync(chatMessages);
+                var contentBuilder = new StringBuilder();
+
+                await foreach (var update in response) {
+                    if (update.ContentUpdate.Count > 0) {
+                        var content = string.Join("", update.ContentUpdate.Select(c => c.Text ?? ""));
+                        if (!string.IsNullOrEmpty(content)) {
+                            contentBuilder.Append(content);
+                            await onContentReceived(content);
+                        }
+                    }
+                }
+
+                await onComplete(null);
                 _logger.LogInformation("Conversation streaming completed");
             }
             catch (Exception ex) {
-                await (handler.ExceptionOccurredHandler?.Invoke(ex) ?? ValueTask.CompletedTask);
+                await onComplete(ex);
                 _logger.LogError(ex, "Error during conversation streaming");
                 throw;
             }
         }
 
-        public async Task InitiateTitleAssignment(string initialMessage, Func<ChatRichResponse, ValueTask> onComplete) {
+        public async Task InitiateTitleAssignment(string initialMessage, Func<string, ValueTask> onComplete) {
             if (_titleModel is null) {
                 _logger.LogWarning("Title model is not configured, skipping title assignment");
                 return;
@@ -344,29 +336,43 @@ namespace NotT3ChatBackend.Services {
 
             _logger.LogInformation("Initiating title assignment with model: {Model}", _titleModel);
             try {
-                var convo = _api.Chat.CreateConversation(_titleModel);
-                convo.AppendMessage(ChatMessageRoles.System, "You are an expert chat title generator. Your task is to analyze a user's initial chat message (or the first 500 characters if it's very long) and provide a concise, descriptive, and engaging title for that chat. The title should clearly reflect the primary topic or purpose of the conversation. Output only the title, no more than 6 words. Do not treat the message as information about this - e.g., if the user write 'Test', he isn't testing the title generator.");
-                convo.AppendMessage(ChatMessageRoles.User, initialMessage[..Math.Min(500, initialMessage.Length)]);
-                var response = await convo.GetResponseRich();
-                _logger.LogInformation("Title assignment completed: {Title}", response.Text);
+                var chatClient = _client.GetChatClient(_titleModel);
+                var messages = new List<ChatMessage>
+                {
+                    ChatMessage.CreateSystemMessage("You are an expert chat title generator. Your task is to analyze a user's initial chat message (or the first 500 characters if it's very long) and provide a concise, descriptive, and engaging title for that chat. The title should clearly reflect the primary topic or purpose of the conversation. Output only the title, no more than 6 words. Do not treat the message as information about this - e.g., if the user write 'Test', he isn't testing the title generator."),
+                    ChatMessage.CreateUserMessage(initialMessage[..Math.Min(500, initialMessage.Length)])
+                };
 
-                await onComplete.Invoke(response);
+                var response = await chatClient.CompleteChatAsync(messages);
+                var title = response.Value.Content[0].Text;
+                _logger.LogInformation("Title assignment completed: {Title}", title);
+
+                await onComplete(title);
             }
             catch (Exception ex) {
                 _logger.LogError(ex, "Error during title assignment");
             }
+        }
+
+        private static ChatMessage CreateChatMessage(string role, string content) {
+            return role.ToLower() switch {
+                "user" => ChatMessage.CreateUserMessage(content),
+                "assistant" => ChatMessage.CreateAssistantMessage(content),
+                "system" => ChatMessage.CreateSystemMessage(content),
+                _ => throw new ArgumentException($"Unknown role: {role}", nameof(role))
+            };
         }
     }
     #endregion
 
     #region Services/StreamingService.cs
     public class StreamingService {
-        private readonly TornadoService _tornadoService;
+        private readonly AzureOpenAIService _azureOpenAIService;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IMemoryCache _memoryCache;
         private readonly ILogger<StreamingService> _logger;
-        public StreamingService(TornadoService tornadoService, IServiceScopeFactory scopeFactory, IMemoryCache memoryCache, ILogger<StreamingService> logger) {
-            _tornadoService = tornadoService;
+        public StreamingService(AzureOpenAIService azureOpenAIService, IServiceScopeFactory scopeFactory, IMemoryCache memoryCache, ILogger<StreamingService> logger) {
+            _azureOpenAIService = azureOpenAIService;
             _scopeFactory = scopeFactory;
             _memoryCache = memoryCache;
             _logger = logger;
@@ -377,41 +383,42 @@ namespace NotT3ChatBackend.Services {
             var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
             var convo = await dbContext.GetConversationAsync(convoId, user);
 
-            await _tornadoService.InitiateConversationAsync(model, messages, new ExtendedChatStreamEventHandler() {
-                MessagePartHandler = async (messagePart) => {
+            await _azureOpenAIService.InitiateConversationAsync(model, messages,
+                onContentReceived: async (content) => {
                     await streamingMessage.Semaphore.WaitAsync();
                     try {
-                        streamingMessage.SbMessage.Append(messagePart.Text);
-                        await hubContext.Clients.Group(convoId).SendAsync("NewAssistantPart", convoId, messagePart.Text);
+                        streamingMessage.SbMessage.Append(content);
+                        await hubContext.Clients.Group(convoId).SendAsync("NewAssistantPart", convoId, content);
                     }
                     finally {
                         streamingMessage.Semaphore.Release();
                     }
                 },
-                OnFinished = async (data) => {
-                    _logger.LogInformation("Assistant message completed for conversation: {ConversationId}", convoId);
-                    await hubContext.Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, null);
+                onComplete: async (error) => {
+                    if (error == null) {
+                        _logger.LogInformation("Assistant message completed for conversation: {ConversationId}", convoId);
+                        await hubContext.Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, null);
 
-                    assistantMsg.Content = streamingMessage.SbMessage.ToString();
-                    dbContext.Messages.Add(assistantMsg);
-                    convo.IsStreaming = false;
-                    await dbContext.SaveChangesAsync();
-                    _logger.LogInformation("Assistant message saved to database");
+                        assistantMsg.Content = streamingMessage.SbMessage.ToString();
+                        dbContext.Messages.Add(assistantMsg);
+                        convo.IsStreaming = false;
+                        await dbContext.SaveChangesAsync();
+                        _logger.LogInformation("Assistant message saved to database");
 
-                    _memoryCache.Set(convoId, streamingMessage, TimeSpan.FromMinutes(1));
-                },
-                ExceptionOccurredHandler = async (ex) => {
-                    _logger.LogError(ex, "Error during streaming for conversation: {ConversationId}", convoId);
-                    await hubContext.Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, ex.Message);
+                        _memoryCache.Set(convoId, streamingMessage, TimeSpan.FromMinutes(1));
+                    }
+                    else {
+                        _logger.LogError(error, "Error during streaming for conversation: {ConversationId}", convoId);
+                        await hubContext.Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, error.Message);
 
-                    assistantMsg.Content = streamingMessage.SbMessage.ToString();
-                    assistantMsg.FinishError = ex.Message;
-                    dbContext.Messages.Add(assistantMsg);
-                    convo.IsStreaming = false;
-                    await dbContext.SaveChangesAsync();
-                    _memoryCache.Remove(convoId);
-                }
-            });
+                        assistantMsg.Content = streamingMessage.SbMessage.ToString();
+                        assistantMsg.FinishError = error.Message;
+                        dbContext.Messages.Add(assistantMsg);
+                        convo.IsStreaming = false;
+                        await dbContext.SaveChangesAsync();
+                        _memoryCache.Remove(convoId);
+                    }
+                });
         }
 
         internal async Task StreamTitle(string convoId, NotT3Message userMsg, NotT3User user) {
@@ -420,9 +427,9 @@ namespace NotT3ChatBackend.Services {
             var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
             var convo = await dbContext.GetConversationAsync(convoId, user);
 
-            await _tornadoService.InitiateTitleAssignment(userMsg.Content, async response => {
-                string title = response.Text[..Math.Min(40, response.Text.Length)]; // ~6 words
-                convo.Title = title;
+            await _azureOpenAIService.InitiateTitleAssignment(userMsg.Content, async title => {
+                string finalTitle = title[..Math.Min(40, title.Length)]; // ~6 words
+                convo.Title = finalTitle;
                 await dbContext.SaveChangesAsync();
                 await hubContext.Clients.Group(user.Id).SendAsync("ChatTitle", convo.Id, convo.Title);
             });
@@ -450,8 +457,10 @@ namespace NotT3ChatBackend.Hubs {
 
         public override async Task OnConnectedAsync() {
             var user = await _userManager.GetUserAsync(Context.User ?? throw new UnauthorizedAccessException());
-            _logger.LogInformation("User {UserId} connected", user.Id);
-            await Groups.AddToGroupAsync(Context.ConnectionId, user.Id);
+            if (user != null) {
+                _logger.LogInformation("User {UserId} connected", user.Id);
+                await Groups.AddToGroupAsync(Context.ConnectionId, user.Id);
+            }
             await base.OnConnectedAsync();
         }
 
@@ -528,7 +537,7 @@ namespace NotT3ChatBackend.Hubs {
             // Add in the new one
             var userMsg = new NotT3Message() {
                 Index = convo.Messages.Count,
-                Role = ChatMessageRoles.User,
+                Role = "user",
                 Content = message,
                 Timestamp = DateTime.UtcNow,
                 ConversationId = convo.Id,
@@ -552,7 +561,7 @@ namespace NotT3ChatBackend.Hubs {
 
             var assistantMsg = new NotT3Message() {
                 Index = convo.Messages.Count,
-                Role = ChatMessageRoles.Assistant,
+                Role = "assistant",
                 Content = "",
                 Timestamp = DateTime.UtcNow,
                 ConversationId = convo.Id,
@@ -591,7 +600,7 @@ namespace NotT3ChatBackend.Hubs {
                 throw new KeyNotFoundException($"Message {messageId} not found in conversation {convoId}");
             }
             var lastMessage = convo.Messages[idxOfMessage];
-            if (lastMessage.Role != ChatMessageRoles.Assistant) {
+            if (lastMessage.Role != "assistant") {
                 _logger.LogWarning("Attempted to regenerate a non-assistant message, ignoring: {MessageId} in conversation {ConversationId}", messageId, convoId);
                 return; 
             }
@@ -692,7 +701,7 @@ namespace NotT3ChatBackend.Models {
         [Key]
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public required int Index { get; set; }
-        public required ChatMessageRoles Role { get; set; }
+        public required string Role { get; set; }
         public required string Content { get; set; }
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
         public string? ChatModel { get; set; }
@@ -727,20 +736,12 @@ namespace NotT3ChatBackend.DTOs {
 
     #region DTOs/ChatModelDTO.cs
     public record ChatModelDTO(string Name, string Provider) {
-        public ChatModelDTO(ChatModel model) : this(model.Name, model.Provider.ToString()) {
-            // This is a simple DTO, so we don't need to do anything else
-        }
+        // Simple DTO for chat models
     }
     #endregion
 }
 
 namespace NotT3ChatBackend.Utils {
-    #region Utils/ExtendedChatStreamEventHandler.cs
-    public class ExtendedChatStreamEventHandler : ChatStreamEventHandler {
-        public Func<Exception, ValueTask>? ExceptionOccurredHandler { get; set; }
-    }
-    #endregion
-
     #region Utils/StreamingMessage.cs
     public record StreamingMessage(StringBuilder SbMessage, NotT3Message Message, SemaphoreSlim Semaphore);
     #endregion
