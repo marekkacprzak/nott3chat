@@ -1,5 +1,8 @@
 🐧 Azure Linux App Service Deployment Guide
+
 Step 1: Create Linux App Service Resources
+
+-------------------- start ----------------
 
 # Login to Azure
 az login
@@ -21,8 +24,12 @@ az webapp create `
     --name "nott3chat-linux-backend" `
     --runtime "DOTNETCORE|8.0"
 
+-------------------- end ----------------
+
 Step 2: Build for Linux Deployment
 Create a Linux-specific deployment script deploy-to-azure-linux.ps1:
+
+-------------------- start ----------------
 
 param(
     [Parameter(Mandatory=$true)]
@@ -99,56 +106,12 @@ Write-Host "🌐 Your app is available at: https://$WebAppName.azurewebsites.net
 
 Set-Location ..
 
-
-I'll show you how to deploy to Azure Linux App Service for .NET. Linux hosting is often more cost-effective and performs well for .NET applications.
-
-🐧 Azure Linux App Service Deployment Guide
-Step 1: Create Linux App Service Resources
-Step 2: Build for Linux Deployment
-Create a Linux-specific deployment script deploy-to-azure-linux.ps1:
-
-Step 3: Update appsettings for Linux Production
-Create backend/appsettings.Production.json for Linux:
-
-{
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information",
-      "Microsoft.AspNetCore": "Warning",
-      "Microsoft.Hosting.Lifetime": "Information"
-    }
-  },
-  "AllowedHosts": "*",
-  "AzureOpenAI": {
-    "Endpoint": "",
-    "Models": ["gpt-4o-mini", "gpt-4o", "gpt-35-turbo"],
-    "TitleModel": "gpt-4o-mini"
-  },
-  "ConnectionStrings": {
-    "DefaultConnection": "Data Source=/home/data/database.dat"
-  },
-  "Kestrel": {
-    "Endpoints": {
-      "Http": {
-        "Url": "http://+:8080"
-      }
-    }
-  }
-}
-
-
-I'll show you how to deploy to Azure Linux App Service for .NET. Linux hosting is often more cost-effective and performs well for .NET applications.
-
-🐧 Azure Linux App Service Deployment Guide
-Step 1: Create Linux App Service Resources
-Step 2: Build for Linux Deployment
-Create a Linux-specific deployment script deploy-to-azure-linux.ps1:
-
-Step 3: Update appsettings for Linux Production
-Create backend/appsettings.Production.json for Linux:
+------------------ end --------------------
 
 Step 4: Configure Program.cs for Linux
 Ensure your Program.cs is configured for Linux hosting:
+
+----------------- start -----------------
 
 // Add this configuration for Linux hosting
 var builder = WebApplication.CreateBuilder(args);
@@ -162,8 +125,12 @@ builder.WebHost.ConfigureKestrel(options =>
 
 // ... rest of your configuration
 
+----------------- end -----------------
+
 Step 5: Deploy to Linux
 Run the Linux deployment script:
+
+----------------- start -----------------
 
 # Example deployment to Linux
 .\deploy-to-azure-linux.ps1 `
@@ -171,7 +138,11 @@ Run the Linux deployment script:
     -WebAppName "nott3chat-linux-backend" `
     -AzureOpenAIEndpoint "https://your-openai-resource.openai.azure.com/"
 
+----------------- end -----------------
+
 Step 6: Enable Managed Identity on Linux
+
+----------------- start -----------------
 
 # Enable system-assigned managed identity
 az webapp identity assign `
@@ -190,7 +161,11 @@ az role assignment create `
     --role "Cognitive Services OpenAI User" `
     --scope "/subscriptions/YOUR_SUBSCRIPTION_ID/resourceGroups/YOUR_OPENAI_RG/providers/Microsoft.CognitiveServices/accounts/YOUR_OPENAI_RESOURCE"
 
+----------------- end -----------------
+
 Step 7: Configure CORS for Linux
+
+----------------- start -----------------
 
 # Configure CORS for your frontend
 az webapp cors add `
@@ -198,9 +173,14 @@ az webapp cors add `
     --name "nott3chat-linux-backend" `
     --allowed-origins "https://your-frontend-domain.com" "http://localhost:5173"
 
+----------------- end -----------------
+
 🔧 Linux-Specific Configuration
+
 Database Path Configuration
 For Linux, update your database configuration:
+
+----------------- start -----------------
 
 // In your Program.cs, configure SQLite for Linux
 if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
@@ -220,8 +200,12 @@ else
     connectionString = "Data Source=database.dat";
 }
 
+----------------- end -----------------
+
 Environment Variables for Linux
 Set these additional environment variables:
+
+----------------- start -----------------
 
 az webapp config appsettings set `
     --resource-group "nott3chat-linux-rg" `
@@ -232,7 +216,11 @@ az webapp config appsettings set `
         "TZ=UTC"
     )
 
+----------------- end -----------------
+
 🚀 Complete Linux Deployment Example
+
+----------------- start -----------------
 
 # 1. Create Linux resources
 az group create --name "my-chat-linux-rg" --location "East US"
@@ -258,6 +246,8 @@ az webapp create `
 # 3. Test the deployment
 Invoke-RestMethod -Uri "https://my-chat-linux-app.azurewebsites.net/health" -Method GET
 
+----------------- end -----------------
+
 📊 Linux vs Windows Comparison
 
 Feature	      Linux App Service	       Windows App Service
@@ -270,6 +260,7 @@ Debugging	   ⚠️ SSH required	      ✅ Built-in tools
 
 🔍 Monitoring Linux Deployment
 
+----------------- start -----------------
 # Check logs
 az webapp log tail --resource-group "nott3chat-linux-rg" --name "nott3chat-linux-backend"
 
@@ -278,6 +269,8 @@ az webapp ssh --resource-group "nott3chat-linux-rg" --name "nott3chat-linux-back
 
 # Check app metrics
 az monitor metrics list --resource "/subscriptions/YOUR_SUB/resourceGroups/nott3chat-linux-rg/providers/Microsoft.Web/sites/nott3chat-linux-backend" --metric "CpuPercentage,MemoryPercentage"
+
+----------------- end -----------------
 
 📋 Linux Deployment Checklist
 <input disabled="" type="checkbox"> Linux App Service Plan created
