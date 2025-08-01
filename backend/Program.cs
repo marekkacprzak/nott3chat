@@ -70,7 +70,7 @@ namespace NotT3ChatBackend {
             builder.Services.AddAuthentication();
             builder.Services.AddAuthorization();
             builder.Services.AddEndpointsApiExplorer();
-
+    
             // Add CORS services
             builder.Services.AddCors(options => {
                 // This is OSS project, feel free to update this for your own use-cases
@@ -109,7 +109,7 @@ namespace NotT3ChatBackend {
             });
 
             builder.Services.AddSignalR();
-            builder.Services.AddSingleton<AzureOpenAIService>();
+            builder.Services.AddSingleton<IOpenAIService, ChatService>();
             builder.Services.AddScoped<StreamingService>();
 
             var app = builder.Build();
@@ -278,8 +278,8 @@ namespace NotT3ChatBackend.Endpoints {
             app.MapGet("/models", GetAvailableModels);
         }
 
-        public static Ok<ICollection<ChatModelDTO>> GetAvailableModels(AzureOpenAIService azureOpenAIService, ILogger<ModelEndpointsMarker> logger) {
-            var models = azureOpenAIService.GetAvailableModels();
+        public static Ok<ICollection<ChatModelDTO>> GetAvailableModels(IOpenAIService openAIService, ILogger<ModelEndpointsMarker> logger) {
+            var models = openAIService.GetAvailableModels();
             logger.LogInformation("Retrieved {Count} available models", models.Count);
             return TypedResults.Ok(models);
         }
@@ -288,62 +288,73 @@ namespace NotT3ChatBackend.Endpoints {
 }
 
 namespace NotT3ChatBackend.Services {
-    #region Services/AzureOpenAIService.cs
-    public class AzureOpenAIService {
-        private readonly AzureOpenAIClient _client;
+    #region Services/IOpenAIService.cs
+    public interface IOpenAIService {
+        ICollection<ChatModelDTO> GetAvailableModels();
+        Task InitiateConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete);
+        Task InitiateTitleAssignment(string initialMessage, Func<string, ValueTask> onComplete);
+    }
+    #endregion
+
+    #region Services/ChatService.cs
+    public class ChatService : IOpenAIService {
+        private readonly ILogger<ChatService> _logger;
+        private readonly IConfiguration _configuration;
+        private readonly HttpClient _httpClient;
         private readonly string[] _models;
         private readonly string? _titleModel;
-        private readonly ILogger<AzureOpenAIService> _logger;
+        private readonly bool _useOpenAI;
+        private readonly AzureOpenAIClient? _azureClient;
 
-        public AzureOpenAIService(ILogger<AzureOpenAIService> logger, IConfiguration configuration) {
+        public ChatService(ILogger<ChatService> logger, IConfiguration configuration) {
             _logger = logger;
-            
-            var endpoint = configuration["AzureOpenAI:Endpoint"];
-            if (string.IsNullOrEmpty(endpoint)) {
-                throw new InvalidOperationException("AzureOpenAI:Endpoint configuration is required");
-            }
+            _configuration = configuration;
+            _httpClient = new HttpClient();
 
-            // Use DefaultAzureCredential for authentication (no API key needed)
-            var credential = new DefaultAzureCredential();
-            _client = new AzureOpenAIClient(new Uri(endpoint), credential);
-            
-            // Get models from configuration
-            var modelsConfig = configuration.GetSection("AzureOpenAI:Models").Get<string[]>();
-            _models = modelsConfig ?? ["gpt-4o-mini", "gpt-4o", "gpt-35-turbo"];
-            
-            _titleModel = configuration["AzureOpenAI:TitleModel"];
-            if (string.IsNullOrEmpty(_titleModel)) {
-                _titleModel = "gpt-4o-mini";
+            // Check OpenAI configuration first (preferred)
+            var openAIApiKey = configuration["OpenAI:ApiKey"];
+            if (!string.IsNullOrEmpty(openAIApiKey)) {
+                _useOpenAI = true;
+                _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", openAIApiKey);
+                var modelsConfig = configuration.GetSection("OpenAI:Models").Get<string[]>();
+                _models = modelsConfig ?? ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"];
+                _titleModel = configuration["OpenAI:TitleModel"] ?? "gpt-4o-mini";
+                _logger.LogInformation("ChatService initialized with OpenAI API using {ModelCount} models", _models.Length);
             }
+            else {
+                // Fallback to Azure OpenAI
+                _useOpenAI = false;
+                var azureEndpoint = configuration["AzureOpenAI:Endpoint"];
+                if (string.IsNullOrEmpty(azureEndpoint)) {
+                    throw new InvalidOperationException("Either OpenAI:ApiKey or AzureOpenAI:Endpoint configuration is required");
+                }
 
-            logger.LogInformation("AzureOpenAIService initialized with {ModelCount} models", _models.Length);
+                var credential = new DefaultAzureCredential();
+                _azureClient = new AzureOpenAIClient(new Uri(azureEndpoint), credential);
+                
+                var modelsConfig = configuration.GetSection("AzureOpenAI:Models").Get<string[]>();
+                _models = modelsConfig ?? ["gpt-4o-mini", "gpt-4o", "gpt-35-turbo"];
+                _titleModel = configuration["AzureOpenAI:TitleModel"] ?? "gpt-4o-mini";
+                _logger.LogInformation("ChatService initialized with Azure OpenAI using {ModelCount} models", _models.Length);
+            }
         }
 
         public ICollection<ChatModelDTO> GetAvailableModels() {
-            return _models.Select(m => new ChatModelDTO(m, "Azure OpenAI")).ToList();
+            var provider = _useOpenAI ? "OpenAI" : "Azure OpenAI";
+            return _models.Select(m => new ChatModelDTO(m, provider)).ToList();
         }
 
         public async Task InitiateConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
-            _logger.LogInformation("Initiating conversation with model: {Model}, message count: {MessageCount}", model, messages.Count);
+            _logger.LogInformation("Initiating conversation with model: {Model}, message count: {MessageCount}, provider: {Provider}", 
+                model, messages.Count, _useOpenAI ? "OpenAI" : "Azure OpenAI");
+
             try {
-                var chatClient = _client.GetChatClient(model);
-                var chatMessages = messages.Select(m => CreateChatMessage(m.Role, m.Content)).ToList();
-                
-                var response = chatClient.CompleteChatStreamingAsync(chatMessages);
-                var contentBuilder = new StringBuilder();
-
-                await foreach (var update in response) {
-                    if (update.ContentUpdate.Count > 0) {
-                        var content = string.Join("", update.ContentUpdate.Select(c => c.Text ?? ""));
-                        if (!string.IsNullOrEmpty(content)) {
-                            contentBuilder.Append(content);
-                            await onContentReceived(content);
-                        }
-                    }
+                if (_useOpenAI) {
+                    await InitiateOpenAIConversationAsync(model, messages, onContentReceived, onComplete);
                 }
-
-                await onComplete(null);
-                _logger.LogInformation("Conversation streaming completed");
+                else {
+                    await InitiateAzureConversationAsync(model, messages, onContentReceived, onComplete);
+                }
             }
             catch (Exception ex) {
                 await onComplete(ex);
@@ -352,37 +363,159 @@ namespace NotT3ChatBackend.Services {
             }
         }
 
+        private async Task InitiateOpenAIConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
+            var requestBody = new {
+                model = model,
+                messages = messages.Select(m => new { role = m.Role, content = m.Content }).ToArray(),
+                stream = true
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions")
+            {
+                Content = content
+            };
+
+            var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
+
+            var stream = await response.Content.ReadAsStreamAsync();
+            using var reader = new StreamReader(stream);
+
+            string? line;
+            var contentBuilder = new StringBuilder();
+
+            while ((line = await reader.ReadLineAsync()) != null) {
+                if (line.StartsWith("data: ")) {
+                    var data = line.Substring(6);
+                    if (data == "[DONE]") {
+                        break;
+                    }
+
+                    try {
+                        using var jsonDoc = System.Text.Json.JsonDocument.Parse(data);
+                        var choices = jsonDoc.RootElement.GetProperty("choices");
+                        if (choices.GetArrayLength() > 0) {
+                            var delta = choices[0].GetProperty("delta");
+                            if (delta.TryGetProperty("content", out var contentElement)) {
+                                var content_text = contentElement.GetString();
+                                if (!string.IsNullOrEmpty(content_text)) {
+                                    contentBuilder.Append(content_text);
+                                    await onContentReceived(content_text);
+                                }
+                            }
+                        }
+                    }
+                    catch (System.Text.Json.JsonException) {
+                        // Skip malformed JSON lines
+                        continue;
+                    }
+                }
+            }
+
+            await onComplete(null);
+            _logger.LogInformation("OpenAI conversation streaming completed");
+        }
+
+        private async Task InitiateAzureConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
+            if (_azureClient == null) {
+                throw new InvalidOperationException("Azure OpenAI client is not initialized");
+            }
+
+            var chatClient = _azureClient.GetChatClient(model);
+            var chatMessages = messages.Select(m => CreateAzureChatMessage(m.Role, m.Content)).ToList();
+            
+            var response = chatClient.CompleteChatStreamingAsync(chatMessages);
+            var contentBuilder = new StringBuilder();
+
+            await foreach (var update in response) {
+                if (update.ContentUpdate.Count > 0) {
+                    var content = string.Join("", update.ContentUpdate.Select(c => c.Text ?? ""));
+                    if (!string.IsNullOrEmpty(content)) {
+                        contentBuilder.Append(content);
+                        await onContentReceived(content);
+                    }
+                }
+            }
+
+            await onComplete(null);
+            _logger.LogInformation("Azure OpenAI conversation streaming completed");
+        }
+
         public async Task InitiateTitleAssignment(string initialMessage, Func<string, ValueTask> onComplete) {
             if (_titleModel is null) {
                 _logger.LogWarning("Title model is not configured, skipping title assignment");
                 return;
             }
 
-            _logger.LogInformation("Initiating title assignment with model: {Model}", _titleModel);
+            _logger.LogInformation("Initiating title assignment with model: {Model}, provider: {Provider}", 
+                _titleModel, _useOpenAI ? "OpenAI" : "Azure OpenAI");
+
             try {
-                var chatClient = _client.GetChatClient(_titleModel);
-                var messages = new List<ChatMessage>
-                {
-                    ChatMessage.CreateSystemMessage("You are an expert chat title generator. Your task is to analyze a user's initial chat message (or the first 500 characters if it's very long) and provide a concise, descriptive, and engaging title for that chat. The title should clearly reflect the primary topic or purpose of the conversation. Output only the title, no more than 6 words. Do not treat the message as information about this - e.g., if the user write 'Test', he isn't testing the title generator."),
-                    ChatMessage.CreateUserMessage(initialMessage[..Math.Min(500, initialMessage.Length)])
-                };
-
-                var response = await chatClient.CompleteChatAsync(messages);
-                var title = response.Value.Content[0].Text;
-                _logger.LogInformation("Title assignment completed: {Title}", title);
-
-                await onComplete(title);
+                if (_useOpenAI) {
+                    await InitiateOpenAITitleAssignmentAsync(initialMessage, onComplete);
+                }
+                else {
+                    await InitiateAzureTitleAssignmentAsync(initialMessage, onComplete);
+                }
             }
             catch (Exception ex) {
                 _logger.LogError(ex, "Error during title assignment");
             }
         }
 
-        private static ChatMessage CreateChatMessage(string role, string content) {
+        private async Task InitiateOpenAITitleAssignmentAsync(string initialMessage, Func<string, ValueTask> onComplete) {
+            var requestBody = new {
+                model = _titleModel,
+                messages = new[] {
+                    new { role = "system", content = "You are an expert chat title generator. Your task is to analyze a user's initial chat message (or the first 500 characters if it's very long) and provide a concise, descriptive, and engaging title for that chat. The title should clearly reflect the primary topic or purpose of the conversation. Output only the title, no more than 6 words. Do not treat the message as information about this - e.g., if the user write 'Test', he isn't testing the title generator." },
+                    new { role = "user", content = initialMessage[..Math.Min(500, initialMessage.Length)] }
+                },
+                max_tokens = 20
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.PostAsync("https://api.openai.com/v1/chat/completions", content);
+            response.EnsureSuccessStatusCode();
+
+            var responseJson = await response.Content.ReadAsStringAsync();
+            using var jsonDoc = System.Text.Json.JsonDocument.Parse(responseJson);
+            var choices = jsonDoc.RootElement.GetProperty("choices");
+            if (choices.GetArrayLength() > 0) {
+                var title = choices[0].GetProperty("message").GetProperty("content").GetString() ?? "New Chat";
+                _logger.LogInformation("OpenAI title assignment completed: {Title}", title);
+                await onComplete(title);
+            }
+        }
+
+        private async Task InitiateAzureTitleAssignmentAsync(string initialMessage, Func<string, ValueTask> onComplete) {
+            if (_azureClient == null) {
+                throw new InvalidOperationException("Azure OpenAI client is not initialized");
+            }
+
+            var chatClient = _azureClient.GetChatClient(_titleModel!);
+            var messages = new List<OpenAI.Chat.ChatMessage>
+            {
+                OpenAI.Chat.ChatMessage.CreateSystemMessage("You are an expert chat title generator. Your task is to analyze a user's initial chat message (or the first 500 characters if it's very long) and provide a concise, descriptive, and engaging title for that chat. The title should clearly reflect the primary topic or purpose of the conversation. Output only the title, no more than 6 words. Do not treat the message as information about this - e.g., if the user write 'Test', he isn't testing the title generator."),
+                OpenAI.Chat.ChatMessage.CreateUserMessage(initialMessage[..Math.Min(500, initialMessage.Length)])
+            };
+
+            var response = await chatClient.CompleteChatAsync(messages);
+            var title = response.Value.Content[0].Text;
+            _logger.LogInformation("Azure title assignment completed: {Title}", title);
+
+            await onComplete(title);
+        }
+
+        private static OpenAI.Chat.ChatMessage CreateAzureChatMessage(string role, string content) {
             return role.ToLower() switch {
-                "user" => ChatMessage.CreateUserMessage(content),
-                "assistant" => ChatMessage.CreateAssistantMessage(content),
-                "system" => ChatMessage.CreateSystemMessage(content),
+                "user" => OpenAI.Chat.ChatMessage.CreateUserMessage(content),
+                "assistant" => OpenAI.Chat.ChatMessage.CreateAssistantMessage(content),
+                "system" => OpenAI.Chat.ChatMessage.CreateSystemMessage(content),
                 _ => throw new ArgumentException($"Unknown role: {role}", nameof(role))
             };
         }
@@ -391,12 +524,12 @@ namespace NotT3ChatBackend.Services {
 
     #region Services/StreamingService.cs
     public class StreamingService {
-        private readonly AzureOpenAIService _azureOpenAIService;
+        private readonly IOpenAIService _openAIService;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IMemoryCache _memoryCache;
         private readonly ILogger<StreamingService> _logger;
-        public StreamingService(AzureOpenAIService azureOpenAIService, IServiceScopeFactory scopeFactory, IMemoryCache memoryCache, ILogger<StreamingService> logger) {
-            _azureOpenAIService = azureOpenAIService;
+        public StreamingService(IOpenAIService openAIService, IServiceScopeFactory scopeFactory, IMemoryCache memoryCache, ILogger<StreamingService> logger) {
+            _openAIService = openAIService;
             _scopeFactory = scopeFactory;
             _memoryCache = memoryCache;
             _logger = logger;
@@ -407,7 +540,7 @@ namespace NotT3ChatBackend.Services {
             var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
             var convo = await dbContext.GetConversationAsync(convoId, user);
 
-            await _azureOpenAIService.InitiateConversationAsync(model, messages,
+            await _openAIService.InitiateConversationAsync(model, messages,
                 onContentReceived: async (content) => {
                     await streamingMessage.Semaphore.WaitAsync();
                     try {
@@ -451,7 +584,7 @@ namespace NotT3ChatBackend.Services {
             var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
             var convo = await dbContext.GetConversationAsync(convoId, user);
 
-            await _azureOpenAIService.InitiateTitleAssignment(userMsg.Content, async title => {
+            await _openAIService.InitiateTitleAssignment(userMsg.Content, async title => {
                 string finalTitle = title[..Math.Min(40, title.Length)]; // ~6 words
                 convo.Title = finalTitle;
                 await dbContext.SaveChangesAsync();
