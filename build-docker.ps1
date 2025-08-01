@@ -9,13 +9,14 @@ param(
 Write-Host "🐳 Building Docker image locally..." -ForegroundColor Green
 
 # Build the Docker image
-Write-Host "📦 Building image: ${ImageName}:${ImageTag}" -ForegroundColor Yellow
-docker build -t "${ImageName}:${ImageTag}" ./backend
+$imageFullName = $ImageName + ":" + $ImageTag
+Write-Host "📦 Building image: $imageFullName" -ForegroundColor Yellow
+docker build -t $imageFullName ./backend
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "✅ Docker image built successfully!" -ForegroundColor Green
     Write-Host "🚀 To run locally:" -ForegroundColor Cyan
-    Write-Host "   docker run -p 5128:8080 -e AzureOpenAI__Endpoint=YOUR_ENDPOINT ${ImageName}:${ImageTag}" -ForegroundColor White
+    Write-Host "   docker run -p 5128:8080 -e AzureOpenAI__Endpoint=YOUR_ENDPOINT $imageFullName" -ForegroundColor White
     Write-Host ""
     Write-Host "🐳 To run with docker-compose:" -ForegroundColor Cyan
     Write-Host "   docker-compose up" -ForegroundColor White
