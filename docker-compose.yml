@@ -15,8 +15,12 @@ services:
       - AzureOpenAI__Models__1=gpt-4o
       - AzureOpenAI__Models__2=gpt-35-turbo
       - AzureOpenAI__TitleModel=gpt-4o-mini
+      - AZURE_FILE_STORAGE_MOUNTED=false
     volumes:
-      - ./data:/app/data
+      # Local development - map host directory to container mount point
+      - ./data:/mnt/azurefileshare
+      # Additional app data volume for local development
+      - app-data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -26,4 +30,5 @@ services:
       start_period: 40s
 
 volumes:
-  data:
+  app-data:
+    driver: local

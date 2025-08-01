@@ -1,6 +1,6 @@
 🐧 Azure Linux App Service Deployment Guide
 
-Step 1: Create Linux App Service Resources
+Step 1: Create Linux App Service Resources with Azure File Storage
 
 -------------------- start ----------------
 
@@ -9,6 +9,22 @@ az login
 
 # Create resource group
 az group create --name "nott3chat-linux-rg" --location "East US"
+
+# Create storage account for Azure File Storage
+az storage account create `
+    --name "nott3chatstorage$(Get-Random)" `
+    --resource-group "nott3chat-linux-rg" `
+    --location "East US" `
+    --sku "Standard_LRS" `
+    --kind "StorageV2"
+
+# Get storage account name (replace with your actual storage account name)
+$storageAccountName = "nott3chatstorage12345"
+
+# Create file share for database persistence
+az storage share create `
+    --name "nott3chatdata" `
+    --account-name $storageAccountName
 
 # Create Linux App Service Plan
 az appservice plan create `
@@ -24,9 +40,25 @@ az webapp create `
     --name "nott3chat-linux-backend" `
     --runtime "DOTNETCORE|8.0"
 
+# Mount Azure File Storage to the web app
+$storageKey = az storage account keys list `
+    --account-name $storageAccountName `
+    --resource-group "nott3chat-linux-rg" `
+    --query "[0].value" -o tsv
+
+az webapp config storage-account add `
+    --resource-group "nott3chat-linux-rg" `
+    --name "nott3chat-linux-backend" `
+    --custom-id "azurefileshare" `
+    --storage-type "AzureFiles" `
+    --share-name "nott3chatdata" `
+    --account-name $storageAccountName `
+    --access-key $storageKey `
+    --mount-path "/mnt/azurefileshare"
+
 -------------------- end ----------------
 
-Step 2: Build for Linux Deployment
+Step 2: Build for Linux Deployment with Azure File Storage
 Create a Linux-specific deployment script deploy-to-azure-linux.ps1:
 
 -------------------- start ----------------
@@ -39,10 +71,30 @@ param(
     [string]$WebAppName,
     
     [Parameter(Mandatory=$true)]
-    [string]$AzureOpenAIEndpoint
+    [string]$AzureOpenAIEndpoint,
+    
+    [Parameter(Mandatory=$true)]
+    [string]$StorageAccountName
 )
 
-Write-Host "🐧 Starting deployment to Azure Linux Web App..." -ForegroundColor Green
+Write-Host "🐧 Starting deployment to Azure Linux Web App with File Storage..." -ForegroundColor Green
+
+# Configure Azure File Storage mount
+Write-Host "💾 Setting up Azure File Storage..." -ForegroundColor Yellow
+$storageKey = az storage account keys list `
+    --account-name $StorageAccountName `
+    --resource-group $ResourceGroupName `
+    --query "[0].value" -o tsv
+
+az webapp config storage-account add `
+    --resource-group $ResourceGroupName `
+    --name $WebAppName `
+    --custom-id "azurefileshare" `
+    --storage-type "AzureFiles" `
+    --share-name "nott3chatdata" `
+    --account-name $StorageAccountName `
+    --access-key $storageKey `
+    --mount-path "/mnt/azurefileshare"
 
 # Build and publish for Linux
 Write-Host "📦 Building application for Linux..." -ForegroundColor Yellow
@@ -62,13 +114,6 @@ Write-Host "📦 Creating Linux deployment package..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path "./deployment-linux"
 Copy-Item -Path "./publish-linux/*" -Destination "./deployment-linux/" -Recurse -Force
 
-# Create startup script for Linux
-$startupScript = @"
-#!/bin/bash
-dotnet NotT3ChatBackend.dll
-"@
-$startupScript | Out-File -FilePath "./deployment-linux/startup.sh" -Encoding UTF8 -NoNewline
-
 # Create the ZIP file for Linux
 Compress-Archive -Path "./deployment-linux/*" -DestinationPath "./nott3chat-backend-linux.zip" -Force
 
@@ -79,7 +124,7 @@ az webapp deployment source config-zip `
     --name $WebAppName `
     --src "./nott3chat-backend-linux.zip"
 
-# Configure app settings for Linux
+# Configure app settings for Linux with Azure File Storage
 Write-Host "⚙️ Configuring Linux application settings..." -ForegroundColor Yellow
 az webapp config appsettings set `
     --resource-group $ResourceGroupName `
@@ -92,7 +137,8 @@ az webapp config appsettings set `
         "AzureOpenAI__Models__0=gpt-4o-mini",
         "AzureOpenAI__Models__1=gpt-4o",
         "AzureOpenAI__Models__2=gpt-35-turbo",
-        "AzureOpenAI__TitleModel=gpt-4o-mini"
+        "AzureOpenAI__TitleModel=gpt-4o-mini",
+        "AZURE_FILE_STORAGE_MOUNTED=true"
     )
 
 # Set startup command for Linux
@@ -101,8 +147,9 @@ az webapp config set `
     --name $WebAppName `
     --startup-file "dotnet NotT3ChatBackend.dll"
 
-Write-Host "✅ Linux deployment completed successfully!" -ForegroundColor Green
+Write-Host "✅ Linux deployment with Azure File Storage completed successfully!" -ForegroundColor Green
 Write-Host "🌐 Your app is available at: https://$WebAppName.azurewebsites.net" -ForegroundColor Cyan
+Write-Host "💾 Database will persist in Azure File Storage at: /mnt/azurefileshare/database.dat" -ForegroundColor Cyan
 
 Set-Location ..
 
@@ -175,20 +222,20 @@ az webapp cors add `
 
 ----------------- end -----------------
 
-🔧 Linux-Specific Configuration
+🔧 Linux-Specific Configuration with Azure File Storage
 
-Database Path Configuration
-For Linux, update your database configuration:
+Database Path Configuration with Azure File Storage
+For Linux with persistent storage, update your database configuration:
 
 ----------------- start -----------------
 
-// In your Program.cs, configure SQLite for Linux
+// In your Program.cs, configure SQLite for Linux with Azure File Storage
 if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
 {
-    // Linux production path
-    var dbPath = "/home/data/database.dat";
+    // Azure File Storage path for Linux production
+    var dbPath = "/mnt/azurefileshare/database.dat";
     var directory = Path.GetDirectoryName(dbPath);
-    if (!Directory.Exists(directory))
+    if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
     {
         Directory.CreateDirectory(directory);
     }
@@ -218,12 +265,25 @@ az webapp config appsettings set `
 
 ----------------- end -----------------
 
-🚀 Complete Linux Deployment Example
+🚀 Complete Linux Deployment Example with Azure File Storage
 
 ----------------- start -----------------
 
-# 1. Create Linux resources
+# 1. Create Linux resources with storage
 az group create --name "my-chat-linux-rg" --location "East US"
+
+# Create storage account
+$storageAccountName = "mychat$(Get-Random)"
+az storage account create `
+    --name $storageAccountName `
+    --resource-group "my-chat-linux-rg" `
+    --location "East US" `
+    --sku "Standard_LRS"
+
+# Create file share
+az storage share create `
+    --name "nott3chatdata" `
+    --account-name $storageAccountName
 
 az appservice plan create `
     --name "my-chat-linux-plan" `
@@ -237,11 +297,12 @@ az webapp create `
     --name "my-chat-linux-app" `
     --runtime "DOTNETCORE|8.0"
 
-# 2. Deploy the application
+# 2. Deploy the application with file storage
 .\deploy-to-azure-linux.ps1 `
     -ResourceGroupName "my-chat-linux-rg" `
     -WebAppName "my-chat-linux-app" `
-    -AzureOpenAIEndpoint "https://my-openai.openai.azure.com/"
+    -AzureOpenAIEndpoint "https://my-openai.openai.azure.com/" `
+    -StorageAccountName $storageAccountName
 
 # 3. Test the deployment
 Invoke-RestMethod -Uri "https://my-chat-linux-app.azurewebsites.net/health" -Method GET
@@ -270,17 +331,98 @@ az webapp ssh --resource-group "nott3chat-linux-rg" --name "nott3chat-linux-back
 # Check app metrics
 az monitor metrics list --resource "/subscriptions/YOUR_SUB/resourceGroups/nott3chat-linux-rg/providers/Microsoft.Web/sites/nott3chat-linux-backend" --metric "CpuPercentage,MemoryPercentage"
 
+# Verify Azure File Storage mount
+az webapp config storage-account list --resource-group "nott3chat-linux-rg" --name "nott3chat-linux-backend"
+
+# Check file share contents
+az storage file list --share-name "nott3chatdata" --account-name "YOUR_STORAGE_ACCOUNT"
+
 ----------------- end -----------------
 
-📋 Linux Deployment Checklist
+💾 Azure File Storage Management
+
+Managing Your Persistent Database Storage
+
+----------------- start -----------------
+
+# List files in the storage share
+az storage file list `
+    --share-name "nott3chatdata" `
+    --account-name "YOUR_STORAGE_ACCOUNT" `
+    --account-key "YOUR_STORAGE_KEY"
+
+# Download database backup
+az storage file download `
+    --share-name "nott3chatdata" `
+    --path "database.dat" `
+    --dest "./database-backup.dat" `
+    --account-name "YOUR_STORAGE_ACCOUNT" `
+    --account-key "YOUR_STORAGE_KEY"
+
+# Upload database restore
+az storage file upload `
+    --share-name "nott3chatdata" `
+    --source "./database-restore.dat" `
+    --path "database.dat" `
+    --account-name "YOUR_STORAGE_ACCOUNT" `
+    --account-key "YOUR_STORAGE_KEY"
+
+# Create additional directories in file share
+az storage directory create `
+    --share-name "nott3chatdata" `
+    --name "backups" `
+    --account-name "YOUR_STORAGE_ACCOUNT" `
+    --account-key "YOUR_STORAGE_KEY"
+
+# Monitor storage usage
+az storage share show `
+    --name "nott3chatdata" `
+    --account-name "YOUR_STORAGE_ACCOUNT" `
+    --account-key "YOUR_STORAGE_KEY" `
+    --query "properties.shareQuota"
+
+----------------- end -----------------
+
+🔧 Troubleshooting Azure File Storage
+
+Common Issues and Solutions
+
+----------------- start -----------------
+
+# Issue: Database file not found
+# Solution: Check mount path and create directory
+az webapp ssh --resource-group "nott3chat-linux-rg" --name "nott3chat-linux-backend"
+# In SSH session:
+ls -la /mnt/azurefileshare/
+mkdir -p /mnt/azurefileshare/
+touch /mnt/azurefileshare/database.dat
+
+# Issue: Permission denied on database file
+# Solution: Check file permissions
+chmod 666 /mnt/azurefileshare/database.dat
+
+# Issue: Storage mount not working
+# Solution: Verify storage account configuration
+az webapp config storage-account list --resource-group "nott3chat-linux-rg" --name "nott3chat-linux-backend"
+
+# Remount storage if needed
+az webapp restart --resource-group "nott3chat-linux-rg" --name "nott3chat-linux-backend"
+
+----------------- end -----------------
+
+📋 Linux Deployment Checklist with Azure File Storage
+<input disabled="" type="checkbox"> Storage account created for file persistence
+<input disabled="" type="checkbox"> Azure File Share created (nott3chatdata)
 <input disabled="" type="checkbox"> Linux App Service Plan created
 <input disabled="" type="checkbox"> Linux Web App created with .NET 8 runtime
+<input disabled="" type="checkbox"> Azure File Storage mounted to /mnt/azurefileshare
 <input disabled="" type="checkbox"> Application built with --runtime linux-x64
 <input disabled="" type="checkbox"> Port 8080 configured in settings
 <input disabled="" type="checkbox"> Startup command set to dotnet NotT3ChatBackend.dll
 <input disabled="" type="checkbox"> Managed Identity enabled
 <input disabled="" type="checkbox"> Azure OpenAI permissions granted
-<input disabled="" type="checkbox"> Database path configured for Linux (/home/data/)
+<input disabled="" type="checkbox"> Database path configured for Azure File Storage (/mnt/azurefileshare/)
 <input disabled="" type="checkbox"> CORS configured
 <input disabled="" type="checkbox"> Health endpoint responding
+<input disabled="" type="checkbox"> Database persistence verified across deployments
 

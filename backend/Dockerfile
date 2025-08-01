@@ -28,8 +28,13 @@ WORKDIR /app
 # Copy the published application
 COPY --from=publish /app/publish .
 
+# Create directories for Azure File Storage mount points
+RUN mkdir -p /mnt/azurefileshare
+
 # Create a non-root user for security
 RUN adduser --disabled-password --home /app --gecos '' appuser && chown -R appuser /app
+# Give appuser permission to write to the mount point
+RUN chown -R appuser /mnt/azurefileshare
 USER appuser
 
 # Set environment variables

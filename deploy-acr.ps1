@@ -18,10 +18,13 @@ param(
     [string]$ImageTag = "latest",
     
     [Parameter(Mandatory=$false)]
-    [string]$Location = "East US"
+    [string]$Location = "East US",
+    
+    [Parameter(Mandatory=$false)]
+    [string]$StorageAccountName = ""
 )
 
-Write-Host "🐳 Starting Docker deployment to Azure Container Registry..." -ForegroundColor Green
+Write-Host "🐳 Starting Docker deployment to Azure Container Registry with File Storage..." -ForegroundColor Green
 
 # Set subscription
 az account set --subscription $SubscriptionId
@@ -29,6 +32,28 @@ az account set --subscription $SubscriptionId
 # Create resource group if it doesn't exist
 Write-Host "📦 Creating resource group..." -ForegroundColor Yellow
 az group create --name $ResourceGroupName --location $Location
+
+# Create storage account for Azure File Storage if not provided
+if ([string]::IsNullOrEmpty($StorageAccountName)) {
+    $StorageAccountName = "$($AcrName.ToLower())storage"
+    Write-Host "💾 No storage account specified, using: $StorageAccountName" -ForegroundColor Cyan
+}
+
+Write-Host "💾 Creating Azure Storage Account for File Storage..." -ForegroundColor Yellow
+az storage account create `
+    --name $StorageAccountName `
+    --resource-group $ResourceGroupName `
+    --location $Location `
+    --sku Standard_LRS `
+    --kind StorageV2 `
+    --access-tier Hot
+
+# Create file share for persistent data
+Write-Host "📁 Creating Azure File Share..." -ForegroundColor Yellow
+az storage share create `
+    --name "nott3chatdata" `
+    --account-name $StorageAccountName `
+    --quota 5
 
 # Create Azure Container Registry
 Write-Host "🏗️ Creating Azure Container Registry..." -ForegroundColor Yellow
@@ -100,8 +125,33 @@ az webapp config appsettings set `
         "AzureOpenAI__Models__0=gpt-4o-mini",
         "AzureOpenAI__Models__1=gpt-4o",
         "AzureOpenAI__Models__2=gpt-35-turbo",
-        "AzureOpenAI__TitleModel=gpt-4o-mini"
+        "AzureOpenAI__TitleModel=gpt-4o-mini",
+        "AZURE_FILE_STORAGE_MOUNTED=true"
     )
+
+# Configure Azure File Storage mount
+Write-Host "🔧 Configuring Azure File Storage mount..." -ForegroundColor Yellow
+$storageKey = az storage account keys list `
+    --account-name $StorageAccountName `
+    --resource-group $ResourceGroupName `
+    --query "[0].value" -o tsv
+
+# Remove existing storage mount if it exists
+az webapp config storage-account delete `
+    --resource-group $ResourceGroupName `
+    --name $WebAppName `
+    --custom-id "azurefileshare" 2>$null
+
+# Add Azure File Storage mount
+az webapp config storage-account add `
+    --resource-group $ResourceGroupName `
+    --name $WebAppName `
+    --custom-id "azurefileshare" `
+    --storage-type "AzureFiles" `
+    --share-name "nott3chatdata" `
+    --account-name $StorageAccountName `
+    --access-key $storageKey `
+    --mount-path "/mnt/azurefileshare"
 
 # Enable continuous deployment
 Write-Host "🔄 Enabling continuous deployment..." -ForegroundColor Yellow
@@ -122,7 +172,11 @@ az acr webhook create `
     --actions push `
     --scope "nott3chat-backend:$ImageTag"
 
-Write-Host "✅ Docker deployment completed successfully!" -ForegroundColor Green
+Write-Host "✅ Docker deployment with Azure File Storage completed successfully!" -ForegroundColor Green
 Write-Host "🌐 Your app is available at: https://$WebAppName.azurewebsites.net" -ForegroundColor Cyan
 Write-Host "🐳 Container image: $imageName" -ForegroundColor Cyan
 Write-Host "📡 ACR: https://$acrLoginServer" -ForegroundColor Cyan
+Write-Host "💾 Storage Account: $StorageAccountName" -ForegroundColor Cyan
+Write-Host "📁 File Share: nott3chatdata" -ForegroundColor Cyan
+Write-Host "📂 Mount Path: /mnt/azurefileshare" -ForegroundColor Cyan
+Write-Host "🗃️ Database Location: /mnt/azurefileshare/database.dat" -ForegroundColor Cyan

@@ -30,6 +30,13 @@ namespace NotT3ChatBackend {
         public static void Main(string[] args) {
             var builder = WebApplication.CreateBuilder(args);
             
+            // Configure Kestrel for Linux
+            builder.WebHost.ConfigureKestrel(options =>
+            {
+                var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+                options.ListenAnyIP(int.Parse(port));
+            });
+
             // Configure Serilog
             Log.Logger = new LoggerConfiguration()
                 .WriteTo.Console()
@@ -38,9 +45,26 @@ namespace NotT3ChatBackend {
 
             builder.Host.UseSerilog();
 
+
+            // Development path
+            var connectionString = "Data Source=database.dat";
+
+            // In your Program.cs, configure SQLite for Linux
+            if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
+            {
+                // Azure File Storage path for Linux production
+                var dbPath = "/mnt/azurefileshare/database.dat";
+                var directory = Path.GetDirectoryName(dbPath);
+                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+                connectionString = $"Data Source={dbPath}";
+            }
+
             builder.Services.AddDbContext<AppDbContext>(opt =>
                         // opt.UseInMemoryDatabase("DB"));
-                        opt.UseSqlite("Data Source=databse.dat"));
+                        opt.UseSqlite(connectionString));
 
             builder.Services.AddMemoryCache();
             builder.Services.AddAuthentication();
