@@ -3,13 +3,18 @@ param(
     [string]$ImageTag = "latest",
     
     [Parameter(Mandatory=$false)]
-    [string]$ImageName = "nott3chat-backend"
+    [string]$ImageName = "nott3chat-backend",
+
+    
+    [Parameter(Mandatory=$false)]
+    [string]$AzureRegistry = "hubchat.azurecr.io"
 )
 
 Write-Host "🐳 Building Docker image locally..." -ForegroundColor Green
 
 # Build the Docker image
 $imageFullName = $ImageName + ":" + $ImageTag
+$imageFullName = $AzureRegistry + "/" + $imageFullName
 Write-Host "📦 Building image: $imageFullName" -ForegroundColor Yellow
 docker build -t $imageFullName ./backend
 

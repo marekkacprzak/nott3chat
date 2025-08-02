@@ -15,10 +15,10 @@ This guide shows how to deploy NotT3Chat backend using Docker containers and Azu
 
 ```pwsh
 # Build the Docker image
-.\build-docker.ps1
+.\buildDocker.ps1
 
 # Or build with custom tag
-.\build-docker.ps1 -ImageTag "v1.0.0"
+.\buildDocker.ps1 -ImageTag "v1.0.0"
 ```
 
 ### 2. Test Locally with Docker
