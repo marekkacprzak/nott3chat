@@ -17,39 +17,67 @@ using Microsoft.AspNetCore.Mvc;
 using System.Text.RegularExpressions;
 using Azure.AI.OpenAI;
 using Azure.Identity;
-using OpenAI.Chat;
 using System.Text;
-
+using Azure.Security.KeyVault.Secrets;
+using System.Reflection;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
+using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
+using Serilog.Events;
+ 
 // This code is staying in one file for now as an intentional experiment for .NET 10's dotnet run app.cs feature,
 // but we are aware of the importance of separating so we are currently assigning regions to be split when the time is right.
 
-namespace NotT3ChatBackend {
-
+namespace NotT3ChatBackend
+{
     #region Program.cs
-    public class Program {
-        public static void Main(string[] args) {
+    public class Program
+    {
+        public static async Task Main(string[] args)
+        {
+            await Task.Delay(0);
             var builder = WebApplication.CreateBuilder(args);
-            
-            // Configure Kestrel for Linux
-            builder.WebHost.ConfigureKestrel(options =>
-            {
-                var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
-                options.ListenAnyIP(int.Parse(port));
-            });
+
+            // Add explicit environment variable configuration support
+            builder.Configuration.AddEnvironmentVariables();
+            //builder.Configuration.AddUserSecrets(Assembly.GetExecutingAssembly());
 
             // Configure Serilog
             Log.Logger = new LoggerConfiguration()
                 .WriteTo.Console()
-                //.WriteTo.File("logs/app.log", rollingInterval: RollingInterval.Day)
-                .CreateLogger();
+                .MinimumLevel.Information()
+                .Enrich.FromLogContext()
+                .Enrich.WithProperty("Application", "NotT3ChatBackend")
+                .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
+                    //.WriteTo.File("logs/app.log", rollingInterval: RollingInterval.Day)
+               .CreateBootstrapLogger();
 
-            builder.Host.UseSerilog();
 
+            builder.Services.AddApplicationInsightsTelemetry();
+             
+
+            builder.Host.UseSerilog((context, services, loggerConfiguration) => loggerConfiguration
+                .ReadFrom.Configuration(context.Configuration)
+                .ReadFrom.Services(services)
+                .Enrich.FromLogContext()
+                .Enrich.WithProperty("Application", "NotT3ChatBackend")
+                .Enrich.WithProperty("DeployTime", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"))
+                .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
+                .WriteTo.Console() // Continue console logging after startup (optional)
+                .WriteTo.ApplicationInsights(
+                    context.Configuration["APPLICATIONINSIGHTS:CONNECTIONSTRING"],
+                    TelemetryConverter.Traces,
+                    restrictedToMinimumLevel: LogEventLevel.Information // You can adjust this level
+                )
+            );
 
             // Development path
             var connectionString = "Data Source=database.dat";
 
+            Console.WriteLine(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"));
             // In your Program.cs, configure SQLite for Linux
+ 
+            connectionString = "Data Source=database.dat";
             if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
             {
                 // Azure File Storage path for Linux production
@@ -59,26 +87,35 @@ namespace NotT3ChatBackend {
                 {
                     Directory.CreateDirectory(directory);
                 }
-                connectionString = $"Data Source={dbPath}";
-            }
-
+                connectionString = $"Data Source={dbPath}";                
+                
+                //createa file in directory with "test" content
+                File.WriteAllText(Path.Combine(directory!, "test.txt"), DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"));
+            } 
             builder.Services.AddDbContext<AppDbContext>(opt =>
-                        // opt.UseInMemoryDatabase("DB"));
-                        opt.UseSqlite(connectionString));
-
+            //             opt.UseInMemoryDatabase("DB"));
+                            opt.UseSqlite(connectionString));
             builder.Services.AddMemoryCache();
+            builder.Services.AddSingleton<UserManager<NotT3User>>();
             builder.Services.AddAuthentication();
             builder.Services.AddAuthorization();
             builder.Services.AddEndpointsApiExplorer();
-    
+
             // Add CORS services
-            builder.Services.AddCors(options => {
+            builder.Services.AddCors(options =>
+            {
                 // This is OSS project, feel free to update this for your own use-cases
-                options.AddPolicy("OpenCorsPolicy", policy => {
-                    policy.SetIsOriginAllowed(_ => true)
-                        .AllowAnyHeader()
-                        .AllowAnyMethod()
-                        .AllowCredentials();
+                options.AddPolicy("OpenCorsPolicy", policy =>
+                {
+                    policy.SetIsOriginAllowed(origin =>
+                    {
+                        Log.Information("CORS request from origin: {Origin}", origin);
+                        return true; // Allow all origins for development
+                    })
+                    .AllowAnyHeader()
+                    .AllowAnyMethod()
+                    .AllowCredentials()
+                    .SetPreflightMaxAge(TimeSpan.FromSeconds(86400)); // Cache preflight for 24 hours
                 });
             });
 
@@ -87,11 +124,13 @@ namespace NotT3ChatBackend {
                         .AddEntityFrameworkStores<AppDbContext>()
                         .AddDefaultTokenProviders();
 
-            builder.Services.ConfigureApplicationCookie(options => {
-                if (builder.Environment.IsProduction()) {
-                    options.Cookie.SameSite = SameSiteMode.None;
-                    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-                }
+            builder.Services.ConfigureApplicationCookie(options =>
+            {
+                //if (builder.Environment.IsProduction())
+                //{
+                //    options.Cookie.SameSite = SameSiteMode.None;
+                //    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+                // }
                 options.Cookie.HttpOnly = true;
                 options.SlidingExpiration = true;
                 options.ExpireTimeSpan = TimeSpan.FromDays(1);
@@ -111,8 +150,13 @@ namespace NotT3ChatBackend {
             builder.Services.AddSignalR();
             builder.Services.AddSingleton<IOpenAIService, ChatService>();
             builder.Services.AddScoped<StreamingService>();
-
-            var app = builder.Build();
+            builder.Services.AddDataProtection().UseCryptographicAlgorithms(
+                new AuthenticatedEncryptorConfiguration
+                {
+                    EncryptionAlgorithm = EncryptionAlgorithm.AES_256_CBC,
+                    ValidationAlgorithm = ValidationAlgorithm.HMACSHA256
+                });
+            var app = builder.Build(); 
 
             // Initialize database and create admin user
             using (var scope = app.Services.CreateScope()) {
@@ -121,7 +165,7 @@ namespace NotT3ChatBackend {
 
                 context.Database.EnsureCreated();
 
-#if DEBUG
+//#if DEBUG
                 Log.Information("Creating debug admin user");
                 var adminUser = new NotT3User { UserName = "admin@example.com", Email = "admin@example.com" };
                 var result = userManager.CreateAsync(adminUser, "admin").Result;
@@ -129,12 +173,12 @@ namespace NotT3ChatBackend {
                     Log.Information("Admin user created successfully");
                 else
                     Log.Warning("Failed to create admin user: {Errors}", string.Join(", ", result.Errors.Select(e => e.Description)));
-#endif
+//#endif
             }
 
             Log.Information("Configuring HTTP pipeline");
-            app.UseRouting();
             app.UseCors("OpenCorsPolicy");
+            app.UseRouting();
 
             // Configure the HTTP request pipeline.
             app.UseAuthentication();
@@ -142,7 +186,18 @@ namespace NotT3ChatBackend {
 
             Log.Information("Mapping endpoints");
 
-            app.MapGet("/health", () => TypedResults.Ok());
+            app.MapGet("/health", (ILogger<Program> logger) =>
+            {
+                var dbPath = "/mnt/azurefileshare/database.dat";
+                var directory = Path.GetDirectoryName(dbPath);
+                connectionString = $"Data Source={dbPath}";
+                // get content of the test.txt file in directory to variable
+                var testFileContent = File.ReadAllText(Path.Combine(directory!, "test.txt"));
+
+                logger.LogInformation("Health check requested");
+
+                return TypedResults.Ok(testFileContent);
+            });
             app.MapIdentityApi<NotT3User>();
             app.MapPost("/logout", async (SignInManager<NotT3User> signInManager) => {
                 await signInManager.SignOutAsync();
@@ -155,13 +210,21 @@ namespace NotT3ChatBackend {
         }
     }
 }
+
+public static class Startup
+{
+   
+}
 #endregion
 
-namespace NotT3ChatBackend.Endpoints {
+namespace NotT3ChatBackend.Endpoints
+{
     #region Endpoints/ChatEndpoints.cs
     public class ChatEndpointsMarker;
-    public static class ChatEndpoints {
-        public static void MapChatEndpoints(this IEndpointRouteBuilder app) {
+    public static class ChatEndpoints
+    {
+        public static void MapChatEndpoints(this IEndpointRouteBuilder app)
+        {
             app.MapHub<ChatHub>("/chat").RequireAuthorization();
             app.MapPost("/chats/new", NewChat).RequireAuthorization();
             app.MapPost("/chats/fork", ForkChat).RequireAuthorization();
@@ -312,8 +375,9 @@ namespace NotT3ChatBackend.Services {
             _httpClient = new HttpClient();
 
             // Check OpenAI configuration first (preferred)
-            var openAIApiKey = configuration["OpenAI:ApiKey"];
-            if (!string.IsNullOrEmpty(openAIApiKey)) {
+            var openAIApiKey = configuration["OpenAI:ApiKey"] ?? GetOpenApiKey(configuration);
+            if (!string.IsNullOrEmpty(openAIApiKey))
+            {
                 _useOpenAI = true;
                 _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", openAIApiKey);
                 var modelsConfig = configuration.GetSection("OpenAI:Models").Get<string[]>();
@@ -339,7 +403,23 @@ namespace NotT3ChatBackend.Services {
             }
         }
 
-        public ICollection<ChatModelDTO> GetAvailableModels() {
+        public static string GetOpenApiKey(IConfiguration configuration)
+        {
+            // Add Azure Key Vault Configuration
+            var keyVaultUrl = configuration["KeyVaultUrl"];
+            if (!string.IsNullOrEmpty(keyVaultUrl))
+            {
+                var secretClient = new SecretClient(new Uri(keyVaultUrl), new DefaultAzureCredential());
+                // Example: Retrieve a secret
+                var secret = secretClient.GetSecret("OpenApiKey");
+                return secret.Value.Value;
+            }
+
+            return string.Empty;
+        }
+
+        public ICollection<ChatModelDTO> GetAvailableModels()
+        {
             var provider = _useOpenAI ? "OpenAI" : "Azure OpenAI";
             return _models.Select(m => new ChatModelDTO(m, provider)).ToList();
         }
