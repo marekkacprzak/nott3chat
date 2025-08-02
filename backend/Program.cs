@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+//using Microsoft.AspNetCore.Identity;
+//using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using System.ComponentModel.DataAnnotations;
 using Serilog;
@@ -17,39 +17,69 @@ using Microsoft.AspNetCore.Mvc;
 using System.Text.RegularExpressions;
 using Azure.AI.OpenAI;
 using Azure.Identity;
-using OpenAI.Chat;
 using System.Text;
+using Azure.Security.KeyVault.Secrets;
+using System.Reflection;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
+using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
+using Serilog.Events;
 
 // This code is staying in one file for now as an intentional experiment for .NET 10's dotnet run app.cs feature,
 // but we are aware of the importance of separating so we are currently assigning regions to be split when the time is right.
 
-namespace NotT3ChatBackend {
-
+namespace NotT3ChatBackend
+{
+    public class UserManager<T> where T : class, new()
+    {  
+    }
     #region Program.cs
-    public class Program {
-        public static void Main(string[] args) {
+    public class Program
+    {
+        public static async Task Main(string[] args)
+        {
             var builder = WebApplication.CreateBuilder(args);
-            
-            // Configure Kestrel for Linux
-            builder.WebHost.ConfigureKestrel(options =>
-            {
-                var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
-                options.ListenAnyIP(int.Parse(port));
-            });
+
+            // Add explicit environment variable configuration support
+            builder.Configuration.AddEnvironmentVariables();
+            //builder.Configuration.AddUserSecrets(Assembly.GetExecutingAssembly());
 
             // Configure Serilog
             Log.Logger = new LoggerConfiguration()
                 .WriteTo.Console()
-                //.WriteTo.File("logs/app.log", rollingInterval: RollingInterval.Day)
-                .CreateLogger();
+                .MinimumLevel.Information()
+                .Enrich.FromLogContext()
+                .Enrich.WithProperty("Application", "NotT3ChatBackend")
+                .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
+                    //.WriteTo.File("logs/app.log", rollingInterval: RollingInterval.Day)
+               .CreateBootstrapLogger();
 
-            builder.Host.UseSerilog();
 
+            builder.Services.AddApplicationInsightsTelemetry();
+             
+
+            builder.Host.UseSerilog((context, services, loggerConfiguration) => loggerConfiguration
+                .ReadFrom.Configuration(context.Configuration)
+                .ReadFrom.Services(services)
+                .Enrich.FromLogContext()
+                .Enrich.WithProperty("Application", "NotT3ChatBackend")
+                .Enrich.WithProperty("DeployTime", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"))
+                .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
+                .WriteTo.Console() // Continue console logging after startup (optional)
+                .WriteTo.ApplicationInsights(
+                    context.Configuration["APPLICATIONINSIGHTS:CONNECTIONSTRING"],
+                    TelemetryConverter.Traces,
+                    restrictedToMinimumLevel: LogEventLevel.Information // You can adjust this level
+                )
+            );
 
             // Development path
             var connectionString = "Data Source=database.dat";
 
+            Console.WriteLine(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"));
             // In your Program.cs, configure SQLite for Linux
+
+            connectionString = "Data Source=database.dat";
             if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
             {
                 // Azure File Storage path for Linux production
@@ -60,35 +90,49 @@ namespace NotT3ChatBackend {
                     Directory.CreateDirectory(directory);
                 }
                 connectionString = $"Data Source={dbPath}";
-            }
+                
+                
+                //createa file in directory with "test" content
+                File.WriteAllText(Path.Combine(directory, "test.txt"), "test");
+            } 
 
-            builder.Services.AddDbContext<AppDbContext>(opt =>
-                        // opt.UseInMemoryDatabase("DB"));
-                        opt.UseSqlite(connectionString));
 
+            //builder.Services.AddDbContext<AppDbContext>(opt =>
+            //             opt.UseInMemoryDatabase("DB"));
+            // opt.UseSqlite(connectionString));
             builder.Services.AddMemoryCache();
-            builder.Services.AddAuthentication();
-            builder.Services.AddAuthorization();
+            builder.Services.AddSingleton<UserManager<NotT3User>>();
+            //builder.Services.AddAuthentication();
+            //builder.Services.AddAuthorization();
             builder.Services.AddEndpointsApiExplorer();
-    
+
             // Add CORS services
-            builder.Services.AddCors(options => {
+            builder.Services.AddCors(options =>
+            {
                 // This is OSS project, feel free to update this for your own use-cases
-                options.AddPolicy("OpenCorsPolicy", policy => {
-                    policy.SetIsOriginAllowed(_ => true)
-                        .AllowAnyHeader()
-                        .AllowAnyMethod()
-                        .AllowCredentials();
+                options.AddPolicy("OpenCorsPolicy", policy =>
+                {
+                    policy.SetIsOriginAllowed(origin =>
+                    {
+                        Log.Information("CORS request from origin: {Origin}", origin);
+                        return true; // Allow all origins for development
+                    })
+                    .AllowAnyHeader()
+                    .AllowAnyMethod()
+                    .AllowCredentials()
+                    .SetPreflightMaxAge(TimeSpan.FromSeconds(86400)); // Cache preflight for 24 hours
                 });
             });
 
-            builder.Services.AddIdentityApiEndpoints<NotT3User>()
-                        .AddRoles<IdentityRole>()
-                        .AddEntityFrameworkStores<AppDbContext>()
-                        .AddDefaultTokenProviders();
+            //builder.Services.AddIdentityApiEndpoints<NotT3User>()
+            //            .AddRoles<IdentityRole>()
+            //            .AddEntityFrameworkStores<AppDbContext>()
+            //            .AddDefaultTokenProviders();
 
-            builder.Services.ConfigureApplicationCookie(options => {
-                if (builder.Environment.IsProduction()) {
+            builder.Services.ConfigureApplicationCookie(options =>
+            {
+                if (builder.Environment.IsProduction())
+                {
                     options.Cookie.SameSite = SameSiteMode.None;
                     options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
                 }
@@ -97,55 +141,76 @@ namespace NotT3ChatBackend {
                 options.ExpireTimeSpan = TimeSpan.FromDays(1);
             });
 
-            builder.Services.Configure<IdentityOptions>(options => {
-                // This is OSS project, feel free to update this for your own use-cases
-                options.SignIn.RequireConfirmedEmail = false;
-                options.User.RequireUniqueEmail = true;
-                options.Password.RequireNonAlphanumeric = false;
-                options.Password.RequireDigit = false;
-                options.Password.RequiredLength = 5;
-                options.Password.RequireLowercase = false;
-                options.Password.RequireUppercase = false;
-            });
-
+            /*
+                        builder.Services.Configure<IdentityOptions>(options =>
+                        {
+                            // This is OSS project, feel free to update this for your own use-cases
+                            options.SignIn.RequireConfirmedEmail = false;
+                            options.User.RequireUniqueEmail = true;
+                            options.Password.RequireNonAlphanumeric = false;
+                            options.Password.RequireDigit = false;
+                            options.Password.RequiredLength = 5;
+                            options.Password.RequireLowercase = false;
+                            options.Password.RequireUppercase = false;
+                        });
+            */
             builder.Services.AddSignalR();
             builder.Services.AddSingleton<IOpenAIService, ChatService>();
             builder.Services.AddScoped<StreamingService>();
-
-            var app = builder.Build();
+            builder.Services.AddDataProtection().UseCryptographicAlgorithms(
+                new AuthenticatedEncryptorConfiguration
+                {
+                    EncryptionAlgorithm = EncryptionAlgorithm.AES_256_CBC,
+                    ValidationAlgorithm = ValidationAlgorithm.HMACSHA256
+                });
+            var app = builder.Build(); 
 
             // Initialize database and create admin user
-            using (var scope = app.Services.CreateScope()) {
-                var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            using (var scope = app.Services.CreateScope())
+            {
+                //var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var userManager = scope.ServiceProvider.GetRequiredService<UserManager<NotT3User>>();
 
-                context.Database.EnsureCreated();
-
-#if DEBUG
+                //context.Database.EnsureCreated();
+                // #if DEBUG
                 Log.Information("Creating debug admin user");
-                var adminUser = new NotT3User { UserName = "admin@example.com", Email = "admin@example.com" };
-                var result = userManager.CreateAsync(adminUser, "admin").Result;
-                if (result.Succeeded)
-                    Log.Information("Admin user created successfully");
-                else
-                    Log.Warning("Failed to create admin user: {Errors}", string.Join(", ", result.Errors.Select(e => e.Description)));
-#endif
+                //var adminUser = new NotT3User { UserName = "admin@example.com", Email = "admin@example.com" };
+                //var result = userManager.CreateAsync(adminUser, "admin").Result;
+                //if (result.Succeeded)
+                //    Log.Information("Admin user created successfully");
+                //else
+                //    Log.Warning("Failed to create admin user: {Errors}", string.Join(", ", result.Errors.Select(e => e.Description)));
+                // #endif
             }
 
             Log.Information("Configuring HTTP pipeline");
-            app.UseRouting();
             app.UseCors("OpenCorsPolicy");
+            app.UseRouting();
 
             // Configure the HTTP request pipeline.
-            app.UseAuthentication();
-            app.UseAuthorization();
+            //app.UseAuthentication();
+            //app.UseAuthorization();
 
             Log.Information("Mapping endpoints");
 
-            app.MapGet("/health", () => TypedResults.Ok());
-            app.MapIdentityApi<NotT3User>();
-            app.MapPost("/logout", async (SignInManager<NotT3User> signInManager) => {
-                await signInManager.SignOutAsync();
+            app.MapGet("/health", (ILogger<Program> logger) =>
+            {
+                var dbPath = "/mnt/azurefileshare/database.dat";
+                var directory = Path.GetDirectoryName(dbPath);
+                connectionString = $"Data Source={dbPath}";
+                // get content of the test.txt file in directory to variable
+                var testFileContent = File.ReadAllText(Path.Combine(directory!, "test.txt"));
+
+                logger.LogInformation("Health check requested");
+
+                return TypedResults.Ok();
+            });
+            //app.MapIdentityApi<NotT3User>();
+            app.MapPost("/logout", async (
+                //SignInManager<NotT3User> signInManager
+                ) =>
+            {
+                //await signInManager.SignOutAsync();
                 return TypedResults.Ok();
             }).RequireAuthorization();
             app.MapModelEndpoints();
@@ -155,13 +220,21 @@ namespace NotT3ChatBackend {
         }
     }
 }
+
+public static class Startup
+{
+   
+}
 #endregion
 
-namespace NotT3ChatBackend.Endpoints {
+namespace NotT3ChatBackend.Endpoints
+{
     #region Endpoints/ChatEndpoints.cs
     public class ChatEndpointsMarker;
-    public static class ChatEndpoints {
-        public static void MapChatEndpoints(this IEndpointRouteBuilder app) {
+    public static class ChatEndpoints
+    {
+        public static void MapChatEndpoints(this IEndpointRouteBuilder app)
+        {
             app.MapHub<ChatHub>("/chat").RequireAuthorization();
             app.MapPost("/chats/new", NewChat).RequireAuthorization();
             app.MapPost("/chats/fork", ForkChat).RequireAuthorization();
@@ -169,9 +242,14 @@ namespace NotT3ChatBackend.Endpoints {
             app.MapGet("/chats", GetChats).RequireAuthorization();
         }
 
-        public static async Task<NoContent> DeleteChat(string conversationId, AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger, IHubContext<ChatHub> hubContext) {
+        public static async Task<NoContent> DeleteChat(string conversationId, 
+            //AppDbContext dbContext,
+            HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger, IHubContext<ChatHub> hubContext)
+        {
+            /*
             logger.LogInformation("Deleting conversation {ConversationId} for user", conversationId);
-            try {
+            try
+            {
                 var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
                 var convo = await dbContext.GetConversationAsync(conversationId, user);
                 dbContext.Conversations.Remove(convo);
@@ -181,16 +259,24 @@ namespace NotT3ChatBackend.Endpoints {
                 logger.LogInformation("Conversation {ConversationId} deleted successfully", conversationId);
                 return TypedResults.NoContent();
             }
-            catch (Exception ex) {
+            catch (Exception ex)
+            {
                 logger.LogError(ex, "Error deleting conversation {ConversationId}", conversationId);
                 throw;
             }
+            */
+            return TypedResults.NoContent();
         }
 
-        public static async Task<Ok<NotT3ConversationDTO>> ForkChat([FromBody] ForkChatRequestDTO request, AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger, IHubContext<ChatHub> hubContext) {
+        public static async Task<Ok<NotT3ConversationDTO>> ForkChat([FromBody] ForkChatRequestDTO request, 
+            //AppDbContext dbContext,
+            HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger, IHubContext<ChatHub> hubContext)
+        {
+            /*
             logger.LogInformation("Forking conversation {ConversationId} from message {MessageId} for user", request.ConversationId, request.MessageId);
 
-            try {
+            try
+            {
                 // Retrieve our conversation & messages
                 var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
                 var convo = await dbContext.GetConversationAsync(request.ConversationId, user);
@@ -199,9 +285,10 @@ namespace NotT3ChatBackend.Endpoints {
                 // Sort the messages by index, and find the message to fork from
                 var messages = convo.Messages.OrderBy(m => m.Index).ToList();
                 var forkIndex = messages.FindIndex(m => m.Id == request.MessageId);
-                if (forkIndex == -1) {
+                if (forkIndex == -1)
+                {
                     logger.LogWarning("Message {MessageId} not found in conversation {ConversationId}", request.MessageId, request.ConversationId);
-                    throw new KeyNotFoundException($"Message {request.MessageId} not found in conversation {request.ConversationId}"); 
+                    throw new KeyNotFoundException($"Message {request.MessageId} not found in conversation {request.ConversationId}");
                 }
 
                 // Create a new conversation with the forked messages
@@ -213,7 +300,8 @@ namespace NotT3ChatBackend.Endpoints {
                                         : $"{convo.Title} (Branch)";
 
                 // Fork the messages
-                var forkedMessages = messages.Take(forkIndex + 1).Select(m => new NotT3Message() {
+                var forkedMessages = messages.Take(forkIndex + 1).Select(m => new NotT3Message()
+                {
                     Index = m.Index,
                     Role = m.Role,
                     Content = m.Content,
@@ -230,15 +318,27 @@ namespace NotT3ChatBackend.Endpoints {
                 logger.LogInformation("New conversation created with ID: {ConversationId}", convo.Id);
                 return TypedResults.Ok(new NotT3ConversationDTO(newConvo));
             }
-            catch (Exception ex) {
+            catch (Exception ex)
+            {
                 logger.LogError(ex, "Error creating new conversation");
                 throw;
             }
+            */
+            return TypedResults.Ok(new NotT3ConversationDTO(new NotT3Conversation()
+            {
+                Id = Guid.NewGuid().ToString(),
+                UserId = "test"
+            }));
         }
 
-        public static async Task<Ok<List<NotT3ConversationDTO>>> GetChats(AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger) {
+        public static async Task<Ok<List<NotT3ConversationDTO>>> GetChats(
+            //AppDbContext dbContext,
+            HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger)
+        {
+            /*
             logger.LogInformation("Retrieving conversations for user");
-            try {
+            try
+            {
                 var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
                 await dbContext.Entry(user).Collection(u => u.Conversations).LoadAsync();
                 var conversations = user.Conversations.OrderByDescending(c => c.CreatedAt)
@@ -246,23 +346,39 @@ namespace NotT3ChatBackend.Endpoints {
                 logger.LogInformation("Retrieved {Count} conversations for user", conversations.Count);
                 return TypedResults.Ok(conversations);
             }
-            catch (Exception ex) {
+            catch (Exception ex)
+            {
                 logger.LogError(ex, "Error retrieving conversations");
                 throw;
             }
+            */
+            var capacity = new NotT3Conversation
+            {
+                UserId = "test",
+                Id = Guid.NewGuid().ToString()
+            };
+            var list = new List<NotT3ConversationDTO>
+            {
+                new NotT3ConversationDTO(capacity)
+            };
+            return TypedResults.Ok<List<NotT3ConversationDTO>>([..list]);
         }
-        
-        public static async Task<Ok<NotT3ConversationDTO>> NewChat(AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger, IHubContext<ChatHub> hubContext) {
-            logger.LogInformation("Creating new conversation for user");
-            try {
-                var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
-                var convo = await dbContext.CreateConversationAsync(user);
 
-                _ = hubContext.Clients.Group(user.Id).SendAsync("NewConversation", new NotT3ConversationDTO(convo));
-                logger.LogInformation("New conversation created with ID: {ConversationId}", convo.Id);
-                return TypedResults.Ok(new NotT3ConversationDTO(convo));
+        public static async Task<Ok<NotT3ConversationDTO>> NewChat(
+            //AppDbContext dbContext,
+            HttpContext context, NotT3User user, ILogger<ChatEndpointsMarker> logger, IHubContext<ChatHub> hubContext)
+        {
+            logger.LogInformation("Creating new conversation for user");
+            try
+            {
+                //var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
+                //var convo = await dbContext.CreateConversationAsync(user);
+                _ = hubContext.Clients.Group(user.Id).SendAsync("NewConversation", new NotT3ConversationDTO());
+                logger.LogInformation("New conversation created with ID: {ConversationId}", new NotT3ConversationDTO().Id);
+                return TypedResults.Ok(new NotT3ConversationDTO());
             }
-            catch (Exception ex) {
+            catch (Exception ex)
+            {
                 logger.LogError(ex, "Error creating new conversation");
                 throw;
             }
@@ -273,12 +389,15 @@ namespace NotT3ChatBackend.Endpoints {
     #region Endpoints/ModelEndpoints.cs
 
     public class ModelEndpointsMarker;
-    public static class ModelEndpoints {
-        public static void MapModelEndpoints(this IEndpointRouteBuilder app) {
+    public static class ModelEndpoints
+    {
+        public static void MapModelEndpoints(this IEndpointRouteBuilder app)
+        {
             app.MapGet("/models", GetAvailableModels);
         }
 
-        public static Ok<ICollection<ChatModelDTO>> GetAvailableModels(IOpenAIService openAIService, ILogger<ModelEndpointsMarker> logger) {
+        public static Ok<ICollection<ChatModelDTO>> GetAvailableModels(IOpenAIService openAIService, ILogger<ModelEndpointsMarker> logger)
+        {
             var models = openAIService.GetAvailableModels();
             logger.LogInformation("Retrieved {Count} available models", models.Count);
             return TypedResults.Ok(models);
@@ -297,7 +416,9 @@ namespace NotT3ChatBackend.Services {
     #endregion
 
     #region Services/ChatService.cs
-    public class ChatService : IOpenAIService {
+    
+    public class ChatService : IOpenAIService
+    {
         private readonly ILogger<ChatService> _logger;
         private readonly IConfiguration _configuration;
         private readonly HttpClient _httpClient;
@@ -306,14 +427,16 @@ namespace NotT3ChatBackend.Services {
         private readonly bool _useOpenAI;
         private readonly AzureOpenAIClient? _azureClient;
 
-        public ChatService(ILogger<ChatService> logger, IConfiguration configuration) {
+        public ChatService(ILogger<ChatService> logger, IConfiguration configuration)
+        {
             _logger = logger;
             _configuration = configuration;
             _httpClient = new HttpClient();
 
             // Check OpenAI configuration first (preferred)
-            var openAIApiKey = configuration["OpenAI:ApiKey"];
-            if (!string.IsNullOrEmpty(openAIApiKey)) {
+            var openAIApiKey = configuration["OpenAI:ApiKey"] ?? GetOpenApiKey(configuration);
+            if (!string.IsNullOrEmpty(openAIApiKey))
+            {
                 _useOpenAI = true;
                 _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", openAIApiKey);
                 var modelsConfig = configuration.GetSection("OpenAI:Models").Get<string[]>();
@@ -321,17 +444,19 @@ namespace NotT3ChatBackend.Services {
                 _titleModel = configuration["OpenAI:TitleModel"] ?? "gpt-4o-mini";
                 _logger.LogInformation("ChatService initialized with OpenAI API using {ModelCount} models", _models.Length);
             }
-            else {
+            else
+            {
                 // Fallback to Azure OpenAI
                 _useOpenAI = false;
                 var azureEndpoint = configuration["AzureOpenAI:Endpoint"];
-                if (string.IsNullOrEmpty(azureEndpoint)) {
+                if (string.IsNullOrEmpty(azureEndpoint))
+                {
                     throw new InvalidOperationException("Either OpenAI:ApiKey or AzureOpenAI:Endpoint configuration is required");
                 }
 
                 var credential = new DefaultAzureCredential();
                 _azureClient = new AzureOpenAIClient(new Uri(azureEndpoint), credential);
-                
+
                 var modelsConfig = configuration.GetSection("AzureOpenAI:Models").Get<string[]>();
                 _models = modelsConfig ?? ["gpt-4o-mini", "gpt-4o", "gpt-35-turbo"];
                 _titleModel = configuration["AzureOpenAI:TitleModel"] ?? "gpt-4o-mini";
@@ -339,32 +464,55 @@ namespace NotT3ChatBackend.Services {
             }
         }
 
-        public ICollection<ChatModelDTO> GetAvailableModels() {
+        public static string GetOpenApiKey(IConfiguration configuration)
+        {
+            // Add Azure Key Vault Configuration
+            var keyVaultUrl = configuration["KeyVaultUrl"];
+            if (!string.IsNullOrEmpty(keyVaultUrl))
+            {
+                var secretClient = new SecretClient(new Uri(keyVaultUrl), new DefaultAzureCredential());
+                // Example: Retrieve a secret
+                var secret = secretClient.GetSecret("OpenApiKey");
+                return secret.Value.Value;
+            }
+
+            return string.Empty;
+        }
+
+        public ICollection<ChatModelDTO> GetAvailableModels()
+        {
             var provider = _useOpenAI ? "OpenAI" : "Azure OpenAI";
             return _models.Select(m => new ChatModelDTO(m, provider)).ToList();
         }
 
-        public async Task InitiateConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
-            _logger.LogInformation("Initiating conversation with model: {Model}, message count: {MessageCount}, provider: {Provider}", 
+        public async Task InitiateConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete)
+        {
+            _logger.LogInformation("Initiating conversation with model: {Model}, message count: {MessageCount}, provider: {Provider}",
                 model, messages.Count, _useOpenAI ? "OpenAI" : "Azure OpenAI");
 
-            try {
-                if (_useOpenAI) {
+            try
+            {
+                if (_useOpenAI)
+                {
                     await InitiateOpenAIConversationAsync(model, messages, onContentReceived, onComplete);
                 }
-                else {
+                else
+                {
                     await InitiateAzureConversationAsync(model, messages, onContentReceived, onComplete);
                 }
             }
-            catch (Exception ex) {
+            catch (Exception ex)
+            {
                 await onComplete(ex);
                 _logger.LogError(ex, "Error during conversation streaming");
                 throw;
             }
         }
 
-        private async Task InitiateOpenAIConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
-            var requestBody = new {
+        private async Task InitiateOpenAIConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete)
+        {
+            var requestBody = new
+            {
                 model = model,
                 messages = messages.Select(m => new { role = m.Role, content = m.Content }).ToArray(),
                 stream = true
@@ -387,28 +535,36 @@ namespace NotT3ChatBackend.Services {
             string? line;
             var contentBuilder = new StringBuilder();
 
-            while ((line = await reader.ReadLineAsync()) != null) {
-                if (line.StartsWith("data: ")) {
+            while ((line = await reader.ReadLineAsync()) != null)
+            {
+                if (line.StartsWith("data: "))
+                {
                     var data = line.Substring(6);
-                    if (data == "[DONE]") {
+                    if (data == "[DONE]")
+                    {
                         break;
                     }
 
-                    try {
+                    try
+                    {
                         using var jsonDoc = System.Text.Json.JsonDocument.Parse(data);
                         var choices = jsonDoc.RootElement.GetProperty("choices");
-                        if (choices.GetArrayLength() > 0) {
+                        if (choices.GetArrayLength() > 0)
+                        {
                             var delta = choices[0].GetProperty("delta");
-                            if (delta.TryGetProperty("content", out var contentElement)) {
+                            if (delta.TryGetProperty("content", out var contentElement))
+                            {
                                 var content_text = contentElement.GetString();
-                                if (!string.IsNullOrEmpty(content_text)) {
+                                if (!string.IsNullOrEmpty(content_text))
+                                {
                                     contentBuilder.Append(content_text);
                                     await onContentReceived(content_text);
                                 }
                             }
                         }
                     }
-                    catch (System.Text.Json.JsonException) {
+                    catch (System.Text.Json.JsonException)
+                    {
                         // Skip malformed JSON lines
                         continue;
                     }
@@ -419,21 +575,26 @@ namespace NotT3ChatBackend.Services {
             _logger.LogInformation("OpenAI conversation streaming completed");
         }
 
-        private async Task InitiateAzureConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
-            if (_azureClient == null) {
+        private async Task InitiateAzureConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete)
+        {
+            if (_azureClient == null)
+            {
                 throw new InvalidOperationException("Azure OpenAI client is not initialized");
             }
 
             var chatClient = _azureClient.GetChatClient(model);
             var chatMessages = messages.Select(m => CreateAzureChatMessage(m.Role, m.Content)).ToList();
-            
+
             var response = chatClient.CompleteChatStreamingAsync(chatMessages);
             var contentBuilder = new StringBuilder();
 
-            await foreach (var update in response) {
-                if (update.ContentUpdate.Count > 0) {
+            await foreach (var update in response)
+            {
+                if (update.ContentUpdate.Count > 0)
+                {
                     var content = string.Join("", update.ContentUpdate.Select(c => c.Text ?? ""));
-                    if (!string.IsNullOrEmpty(content)) {
+                    if (!string.IsNullOrEmpty(content))
+                    {
                         contentBuilder.Append(content);
                         await onContentReceived(content);
                     }
@@ -444,30 +605,38 @@ namespace NotT3ChatBackend.Services {
             _logger.LogInformation("Azure OpenAI conversation streaming completed");
         }
 
-        public async Task InitiateTitleAssignment(string initialMessage, Func<string, ValueTask> onComplete) {
-            if (_titleModel is null) {
+        public async Task InitiateTitleAssignment(string initialMessage, Func<string, ValueTask> onComplete)
+        {
+            if (_titleModel is null)
+            {
                 _logger.LogWarning("Title model is not configured, skipping title assignment");
                 return;
             }
 
-            _logger.LogInformation("Initiating title assignment with model: {Model}, provider: {Provider}", 
+            _logger.LogInformation("Initiating title assignment with model: {Model}, provider: {Provider}",
                 _titleModel, _useOpenAI ? "OpenAI" : "Azure OpenAI");
 
-            try {
-                if (_useOpenAI) {
+            try
+            {
+                if (_useOpenAI)
+                {
                     await InitiateOpenAITitleAssignmentAsync(initialMessage, onComplete);
                 }
-                else {
+                else
+                {
                     await InitiateAzureTitleAssignmentAsync(initialMessage, onComplete);
                 }
             }
-            catch (Exception ex) {
+            catch (Exception ex)
+            {
                 _logger.LogError(ex, "Error during title assignment");
             }
         }
 
-        private async Task InitiateOpenAITitleAssignmentAsync(string initialMessage, Func<string, ValueTask> onComplete) {
-            var requestBody = new {
+        private async Task InitiateOpenAITitleAssignmentAsync(string initialMessage, Func<string, ValueTask> onComplete)
+        {
+            var requestBody = new
+            {
                 model = _titleModel,
                 messages = new[] {
                     new { role = "system", content = "You are an expert chat title generator. Your task is to analyze a user's initial chat message (or the first 500 characters if it's very long) and provide a concise, descriptive, and engaging title for that chat. The title should clearly reflect the primary topic or purpose of the conversation. Output only the title, no more than 6 words. Do not treat the message as information about this - e.g., if the user write 'Test', he isn't testing the title generator." },
@@ -485,15 +654,18 @@ namespace NotT3ChatBackend.Services {
             var responseJson = await response.Content.ReadAsStringAsync();
             using var jsonDoc = System.Text.Json.JsonDocument.Parse(responseJson);
             var choices = jsonDoc.RootElement.GetProperty("choices");
-            if (choices.GetArrayLength() > 0) {
+            if (choices.GetArrayLength() > 0)
+            {
                 var title = choices[0].GetProperty("message").GetProperty("content").GetString() ?? "New Chat";
                 _logger.LogInformation("OpenAI title assignment completed: {Title}", title);
                 await onComplete(title);
             }
         }
 
-        private async Task InitiateAzureTitleAssignmentAsync(string initialMessage, Func<string, ValueTask> onComplete) {
-            if (_azureClient == null) {
+        private async Task InitiateAzureTitleAssignmentAsync(string initialMessage, Func<string, ValueTask> onComplete)
+        {
+            if (_azureClient == null)
+            {
                 throw new InvalidOperationException("Azure OpenAI client is not initialized");
             }
 
@@ -511,8 +683,10 @@ namespace NotT3ChatBackend.Services {
             await onComplete(title);
         }
 
-        private static OpenAI.Chat.ChatMessage CreateAzureChatMessage(string role, string content) {
-            return role.ToLower() switch {
+        private static OpenAI.Chat.ChatMessage CreateAzureChatMessage(string role, string content)
+        {
+            return role.ToLower() switch
+            {
                 "user" => OpenAI.Chat.ChatMessage.CreateUserMessage(content),
                 "assistant" => OpenAI.Chat.ChatMessage.CreateAssistantMessage(content),
                 "system" => OpenAI.Chat.ChatMessage.CreateSystemMessage(content),
@@ -536,9 +710,9 @@ namespace NotT3ChatBackend.Services {
         }
         internal async Task StartStreaming(string model, ICollection<NotT3Message> messages, string convoId, NotT3Message assistantMsg, StreamingMessage streamingMessage, NotT3User user) {
             using var scope = _scopeFactory.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            //var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
-            var convo = await dbContext.GetConversationAsync(convoId, user);
+           // var convo = await dbContext.GetConversationAsync(convoId, user);
 
             await _openAIService.InitiateConversationAsync(model, messages,
                 onContentReceived: async (content) => {
@@ -557,9 +731,9 @@ namespace NotT3ChatBackend.Services {
                         await hubContext.Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, null);
 
                         assistantMsg.Content = streamingMessage.SbMessage.ToString();
-                        dbContext.Messages.Add(assistantMsg);
-                        convo.IsStreaming = false;
-                        await dbContext.SaveChangesAsync();
+                        //dbContext.Messages.Add(assistantMsg);
+                        //convo.IsStreaming = false;
+                        //await dbContext.SaveChangesAsync();
                         _logger.LogInformation("Assistant message saved to database");
 
                         _memoryCache.Set(convoId, streamingMessage, TimeSpan.FromMinutes(1));
@@ -570,15 +744,16 @@ namespace NotT3ChatBackend.Services {
 
                         assistantMsg.Content = streamingMessage.SbMessage.ToString();
                         assistantMsg.FinishError = error.Message;
-                        dbContext.Messages.Add(assistantMsg);
-                        convo.IsStreaming = false;
-                        await dbContext.SaveChangesAsync();
+                        //dbContext.Messages.Add(assistantMsg);
+                        //convo.IsStreaming = false;
+                        //await dbContext.SaveChangesAsync();
                         _memoryCache.Remove(convoId);
                     }
                 });
         }
 
         internal async Task StreamTitle(string convoId, NotT3Message userMsg, NotT3User user) {
+            /*
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
@@ -587,9 +762,10 @@ namespace NotT3ChatBackend.Services {
             await _openAIService.InitiateTitleAssignment(userMsg.Content, async title => {
                 string finalTitle = title[..Math.Min(40, title.Length)]; // ~6 words
                 convo.Title = finalTitle;
-                await dbContext.SaveChangesAsync();
+                //await dbContext.SaveChangesAsync();
                 await hubContext.Clients.Group(user.Id).SendAsync("ChatTitle", convo.Id, convo.Title);
             });
+            */
         }
     }
 }
@@ -599,13 +775,14 @@ namespace NotT3ChatBackend.Services {
 namespace NotT3ChatBackend.Hubs {
     public class ChatHub : Hub {
         private readonly StreamingService _streamingService;
-        private readonly AppDbContext _dbContext;
+        //private readonly AppDbContext _dbContext;
         private readonly UserManager<NotT3User> _userManager;
         private readonly IMemoryCache _memoryCache;
         private readonly ILogger<ChatHub> _logger;
         
-        public ChatHub(AppDbContext dbContext, UserManager<NotT3User> userManager, IMemoryCache memoryCache, StreamingService streamingService, ILogger<ChatHub> logger) {
-            _dbContext = dbContext;
+        public ChatHub(//AppDbContext dbContext, 
+            UserManager<NotT3User> userManager, IMemoryCache memoryCache, StreamingService streamingService, ILogger<ChatHub> logger) {
+            //_dbContext = dbContext;
             _userManager = userManager;
             _memoryCache = memoryCache;
             _streamingService = streamingService;
@@ -613,6 +790,7 @@ namespace NotT3ChatBackend.Hubs {
         }
 
         public override async Task OnConnectedAsync() {
+            /*
             var user = await _userManager.GetUserAsync(Context.User ?? throw new UnauthorizedAccessException());
             if (user != null) {
                 _logger.LogInformation("User {UserId} connected", user.Id);
@@ -667,9 +845,11 @@ namespace NotT3ChatBackend.Hubs {
             }
 
             await base.OnConnectedAsync();
+            */
         }
 
         public async Task NewMessage(string model, string message) {
+            /*
             if (!Context.Items.TryGetValue(Context.ConnectionId, out var convoIdObj)) {
                 _logger.LogWarning("User attempted to send a message without being in a conversation group");
                 return;
@@ -726,9 +906,11 @@ namespace NotT3ChatBackend.Hubs {
                 ChatModel = model
             };
             await GenerateAssistantMessage(model, convoId, convo, assistantMsg, user!);
+            */
         }
 
         public async Task RegenerateMessage(string model, string messageId) {
+            /*
             if (!Context.Items.TryGetValue(Context.ConnectionId, out var convoIdObj)) {
                 _logger.LogWarning("User attempted to regenerated a message without being in a conversation group");
                 return;
@@ -778,9 +960,11 @@ namespace NotT3ChatBackend.Hubs {
             await _dbContext.SaveChangesAsync();
             _logger.LogInformation("Conversation marked as streaming and changes saved");
             await GenerateAssistantMessage(model, convoId, convo, lastMessage, user!);
+            */
         }
 
         private async Task GenerateAssistantMessage(string model, string convoId, NotT3Conversation convo, NotT3Message assistantMsg, NotT3User user) {
+            /*
             await Clients.Group(convoId).SendAsync("BeginAssistantMessage", convoId, new NotT3MessageDTO(assistantMsg));
             _logger.LogInformation("Starting assistant response with ID: {ResponseId}", assistantMsg.Id);
 
@@ -789,6 +973,7 @@ namespace NotT3ChatBackend.Hubs {
 
             // Create our conversation and sync
             _ = _streamingService.StartStreaming(model, convo.Messages, convoId, assistantMsg, streamingMessage, user);
+      */
         }
     }
 }
@@ -796,6 +981,7 @@ namespace NotT3ChatBackend.Hubs {
 
 #region Data/AppDbContext.cs
 namespace NotT3ChatBackend.Data {
+    /*
     public class AppDbContext(DbContextOptions<AppDbContext> options, ILogger<AppDbContext> logger) : IdentityDbContext<NotT3User>(options) {
 #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring as nullable.
         internal DbSet<NotT3Conversation> Conversations { get; init; }
@@ -827,19 +1013,22 @@ namespace NotT3ChatBackend.Data {
         }
 #pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring as nullable.
     }
+    */
 }
 #endregion
 
 namespace NotT3ChatBackend.Models {
     #region Models/NotT3User.cs
-    public class NotT3User : IdentityUser {
+    public class NotT3User {
         // Navigators
         public ICollection<NotT3Conversation> Conversations { get; set; } = [];
+        public string Id { get; set; } = "Marek";
     }
     #endregion
 
     #region Models/NotT3Conversation.cs
-    public class NotT3Conversation {
+    public class NotT3Conversation
+    {
         [Key]
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public DateTime CreatedAt { get; } = DateTime.UtcNow;
@@ -850,6 +1039,10 @@ namespace NotT3ChatBackend.Models {
         // Navigators
         public NotT3User? User { get; set; }
         public List<NotT3Message> Messages { get; set; } = [];
+        public NotT3Conversation()
+        {
+            
+        }
     }
     #endregion
 
@@ -877,6 +1070,9 @@ namespace NotT3ChatBackend.Models {
 namespace NotT3ChatBackend.DTOs {
     #region DTOs/NotT3ConversationDTO.cs
     public record NotT3ConversationDTO(string Id, DateTime CreatedAt, string Title) {
+        public NotT3ConversationDTO() : this("test", DateTime.UtcNow, "New Chat")
+        {
+        }
         public NotT3ConversationDTO(NotT3Conversation conversation) : this(conversation.Id, conversation.CreatedAt, conversation.Title) { }
     }
     #endregion
