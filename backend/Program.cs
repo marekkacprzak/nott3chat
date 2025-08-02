@@ -40,7 +40,7 @@ namespace NotT3ChatBackend
 
             // Add explicit environment variable configuration support
             builder.Configuration.AddEnvironmentVariables();
-            //builder.Configuration.AddUserSecrets(Assembly.GetExecutingAssembly());
+            builder.Configuration.AddUserSecrets(Assembly.GetExecutingAssembly());
 
             // Configure Serilog
             Log.Logger = new LoggerConfiguration()
@@ -49,12 +49,9 @@ namespace NotT3ChatBackend
                 .Enrich.FromLogContext()
                 .Enrich.WithProperty("Application", "NotT3ChatBackend")
                 .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
-                    //.WriteTo.File("logs/app.log", rollingInterval: RollingInterval.Day)
-               .CreateBootstrapLogger();
+                .CreateBootstrapLogger();
 
-
-            builder.Services.AddApplicationInsightsTelemetry();
-             
+            builder.Services.AddApplicationInsightsTelemetry();             
 
             builder.Host.UseSerilog((context, services, loggerConfiguration) => loggerConfiguration
                 .ReadFrom.Configuration(context.Configuration)
@@ -93,8 +90,8 @@ namespace NotT3ChatBackend
                 File.WriteAllText(Path.Combine(directory!, "test.txt"), DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"));
             } 
             builder.Services.AddDbContext<AppDbContext>(opt =>
-            //             opt.UseInMemoryDatabase("DB"));
-                            opt.UseSqlite(connectionString));
+            //  opt.UseInMemoryDatabase("DB"));
+                opt.UseSqlite(connectionString));
             builder.Services.AddMemoryCache();
             builder.Services.AddSingleton<UserManager<NotT3User>>();
             builder.Services.AddAuthentication();
@@ -165,7 +162,7 @@ namespace NotT3ChatBackend
 
                 context.Database.EnsureCreated();
 
-//#if DEBUG
+#if DEBUG
                 Log.Information("Creating debug admin user");
                 var adminUser = new NotT3User { UserName = "admin@example.com", Email = "admin@example.com" };
                 var result = userManager.CreateAsync(adminUser, "admin").Result;
@@ -173,19 +170,16 @@ namespace NotT3ChatBackend
                     Log.Information("Admin user created successfully");
                 else
                     Log.Warning("Failed to create admin user: {Errors}", string.Join(", ", result.Errors.Select(e => e.Description)));
-//#endif
+#endif
             }
 
             Log.Information("Configuring HTTP pipeline");
             app.UseCors("OpenCorsPolicy");
             app.UseRouting();
-
-            // Configure the HTTP request pipeline.
             app.UseAuthentication();
             app.UseAuthorization();
 
             Log.Information("Mapping endpoints");
-
             app.MapGet("/health", (ILogger<Program> logger) =>
             {
                 var dbPath = "/mnt/azurefileshare/database.dat";
@@ -205,7 +199,6 @@ namespace NotT3ChatBackend
             }).RequireAuthorization();
             app.MapModelEndpoints();
             app.MapChatEndpoints();
-
             app.Run();
         }
     }
@@ -213,7 +206,6 @@ namespace NotT3ChatBackend
 
 public static class Startup
 {
-   
 }
 #endregion
 
