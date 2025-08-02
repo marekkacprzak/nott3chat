@@ -126,11 +126,11 @@ namespace NotT3ChatBackend
 
             builder.Services.ConfigureApplicationCookie(options =>
             {
-                //if (builder.Environment.IsProduction())
-                //{
-                //    options.Cookie.SameSite = SameSiteMode.None;
-                //    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-                // }
+                if (builder.Environment.IsProduction())
+                {
+                    options.Cookie.SameSite = SameSiteMode.None;
+                    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+                }
                 options.Cookie.HttpOnly = true;
                 options.SlidingExpiration = true;
                 options.ExpireTimeSpan = TimeSpan.FromDays(1);
