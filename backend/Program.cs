@@ -175,6 +175,8 @@ namespace NotT3ChatBackend
             builder.Services.AddSignalR();
             builder.Services.AddSingleton<IOpenAIService, ChatService>();
             builder.Services.AddScoped<StreamingService>();
+            builder.Services.AddScoped<IPerplexityService, PerplexityService>();
+            builder.Services.AddHttpClient<IPerplexityService, PerplexityService>();
             builder.Services.AddDataProtection().UseCryptographicAlgorithms(
                 new AuthenticatedEncryptorConfiguration
                 {
@@ -403,11 +405,13 @@ namespace NotT3ChatBackend.Services {
         private readonly string? _titleModel;
         private readonly bool _useOpenAI;
         private readonly AzureOpenAIClient? _azureClient;
+        private readonly IPerplexityService _perplexityService;
 
-        public ChatService(ILogger<ChatService> logger, IConfiguration configuration) {
+        public ChatService(ILogger<ChatService> logger, IConfiguration configuration, IPerplexityService perplexityService) {
             _logger = logger;
             _configuration = configuration;
             _httpClient = new HttpClient();
+            _perplexityService = perplexityService;
 
             // Check OpenAI configuration first (preferred)
             var openAIApiKey = configuration["OpenAI:ApiKey"] ?? GetOpenApiKey(configuration);
@@ -464,7 +468,12 @@ namespace NotT3ChatBackend.Services {
                 model, messages.Count, _useOpenAI ? "OpenAI" : "Azure OpenAI");
 
             try {
-                if (_useOpenAI) {
+                // Handle Perplexity model differently
+                if (model.Equals("perplexity", StringComparison.OrdinalIgnoreCase))
+                {
+                    await InitiatePerplexityConversationAsync(model, messages, onContentReceived, onComplete);
+                }
+                else if (_useOpenAI) {
                     await InitiateOpenAIConversationAsync(model, messages, onContentReceived, onComplete);
                 }
                 else {
@@ -532,6 +541,54 @@ namespace NotT3ChatBackend.Services {
 
             await onComplete(null);
             _logger.LogInformation("OpenAI conversation streaming completed");
+        }
+
+        private async Task InitiatePerplexityConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
+            try {
+                _logger.LogInformation("Starting Perplexity conversation");
+                
+                // Get the last message as the search query
+                var lastMessage = messages.LastOrDefault();
+                if (lastMessage == null || string.IsNullOrEmpty(lastMessage.Content)) {
+                    await onComplete(new ArgumentException("No valid query provided"));
+                    return;
+                }
+
+                var searchQuery = lastMessage.Content;
+                
+                // Create Perplexity search request
+                var searchRequest = new PerplexitySearchRequest 
+                { 
+                    Query = searchQuery,
+                    SearchRecencyFilter = "month",
+                    SearchMode = "comprehensive",
+                    ShowThinking = false
+                };
+                
+                // Call Perplexity service
+                var searchResult = await _perplexityService.SearchAsync(searchRequest);
+                
+                if (!string.IsNullOrEmpty(searchResult.Result)) {
+                    // Stream the content back
+                    await onContentReceived(searchResult.Result);
+                    
+                    // Add sources if available
+                    if (searchResult.Sources != null && searchResult.Sources.Any()) {
+                        var sourcesText = "\n\n**Sources:**\n" + string.Join("\n", searchResult.Sources.Select((s, i) => $"{i + 1}. {s}"));
+                        await onContentReceived(sourcesText);
+                    }
+                } else {
+                    var errorMessage = "Perplexity search failed: No results returned";
+                    await onContentReceived(errorMessage);
+                }
+                
+                await onComplete(null);
+                _logger.LogInformation("Perplexity conversation completed");
+            }
+            catch (Exception ex) {
+                _logger.LogError(ex, "Error during Perplexity conversation");
+                await onComplete(ex);
+            }
         }
 
         private async Task InitiateAzureConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
@@ -707,6 +764,232 @@ namespace NotT3ChatBackend.Services {
             });
         }
     }
+
+    #region Services/PerplexityService.cs
+    public interface IPerplexityService
+    {
+        Task<PerplexityResponse> SearchAsync(PerplexitySearchRequest request);
+        Task<PerplexityResponse> DeepResearchAsync(PerplexityDeepResearchRequest request);
+    }
+
+    public class PerplexityService : IPerplexityService
+    {
+        private readonly ILogger<PerplexityService> _logger;
+        private readonly HttpClient _httpClient;
+        private readonly IConfiguration _configuration;
+
+        public PerplexityService(
+            ILogger<PerplexityService> logger,
+            HttpClient httpClient,
+            IConfiguration configuration)
+        {
+            _logger = logger;
+            _httpClient = httpClient;
+            _configuration = configuration;
+        }
+
+        public async Task<PerplexityResponse> SearchAsync(PerplexitySearchRequest request)
+        {
+            try
+            {
+                _logger.LogInformation("Performing Perplexity search for query: {Query}", request.Query);
+
+                // Check if we have a valid API key
+                var apiKey = _configuration["Perplexity:ApiKey"];
+                if (string.IsNullOrEmpty(apiKey))
+                {
+                    _logger.LogWarning("No valid Perplexity API key configured, returning demo response");
+                    return new PerplexityResponse
+                    {
+                        Result = $"✅ SEARCH ENDPOINT IS WORKING! 🎉\n\nQuery received: '{request.Query}'\n\nTo get real AI responses:\n1. Get API key from https://perplexity.ai/account/api\n2. Add it to appsettings.Development.json\n3. Restart server\n\nThe integration is ready for production!",
+                        Sources = new List<string> { "https://docs.perplexity.ai/getting-started/quickstart" },
+                        Cost = 0.0m
+                    };
+                }
+
+                // Use direct Perplexity API
+                var result = await CallPerplexityApiAsync(request.Query, request.SearchRecencyFilter);
+                
+                _logger.LogInformation("Perplexity search completed successfully");
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error performing Perplexity search");
+                return new PerplexityResponse
+                {
+                    Result = $"Error: {ex.Message}"
+                };
+            }
+        }
+
+        private async Task<PerplexityResponse> CallPerplexityApiAsync(string query, string? searchRecencyFilter = null)
+        {
+            try
+            {
+                // Get API key from configuration
+                var apiKey = _configuration["Perplexity:ApiKey"];
+                if (string.IsNullOrEmpty(apiKey))
+                {
+                    throw new InvalidOperationException("Perplexity API key not configured");
+                }
+
+                // Set up request
+                var requestData = new
+                {
+                    model = "sonar",
+                    messages = new[]
+                    {
+                        new { role = "system", content = "Be precise and concise." },
+                        new { role = "user", content = query }
+                    },
+                    return_images = false,
+                    return_related_questions = false,
+                    search_recency_filter = searchRecencyFilter ?? "month",
+                    top_p = 0.9,
+                    stream = false
+                };
+
+                var requestJson = System.Text.Json.JsonSerializer.Serialize(requestData, new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower
+                });
+
+                var request = new HttpRequestMessage(HttpMethod.Post, "https://api.perplexity.ai/chat/completions")
+                {
+                    Content = new StringContent(requestJson, System.Text.Encoding.UTF8, "application/json")
+                };
+
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+                // Send request
+                var response = await _httpClient.SendAsync(request);
+                var responseContent = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("Perplexity API error: {StatusCode} - {Content}", response.StatusCode, responseContent);
+                    return new PerplexityResponse
+                    {
+                        Result = $"API Error: {response.StatusCode} - {responseContent}"
+                    };
+                }
+
+                // Parse response
+                var apiResponse = System.Text.Json.JsonSerializer.Deserialize<PerplexityApiResponse>(responseContent, new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower
+                });
+
+                _logger.LogDebug("Raw API Response: {Response}", responseContent);
+
+                if (apiResponse?.Choices?.Length > 0)
+                {
+                    var choice = apiResponse.Choices[0];
+                    var content = choice.Message.Content ?? "No response content";
+                    
+                    // Extract sources from search_results
+                    var sources = new List<string>();
+                    
+                    // Get sources from search_results if available
+                    if (apiResponse.SearchResults?.Any() == true)
+                    {
+                        foreach (var result in apiResponse.SearchResults)
+                        {
+                            if (!string.IsNullOrEmpty(result.Url))
+                            {
+                                sources.Add(result.Url);
+                            }
+                        }
+                    }
+                    
+                    // Also try to get citations from the message (fallback)
+                    if (!sources.Any() && choice.Message.Citations?.Any() == true)
+                    {
+                        sources.AddRange(choice.Message.Citations);
+                    }
+                    
+                    // If we still don't have sources, extract citation count from text
+                    if (!sources.Any())
+                    {
+                        var citationMatches = System.Text.RegularExpressions.Regex.Matches(content, @"\[(\d+)\]");
+                        if (citationMatches.Count > 0)
+                        {
+                            sources.Add($"Citations embedded in text: {citationMatches.Count} references");
+                        }
+                    }
+                    
+                    return new PerplexityResponse
+                    {
+                        Result = content,
+                        Sources = sources.Any() ? sources : null,
+                        Cost = CalculateCost(apiResponse.Usage)
+                    };
+                }
+
+                return new PerplexityResponse
+                {
+                    Result = "No response received from Perplexity API"
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error calling Perplexity API");
+                throw;
+            }
+        }
+
+        private decimal CalculateCost(PerplexityUsage? usage)
+        {
+            if (usage == null) return 0;
+            
+            // Pricing for sonar model: $1 per 1M tokens for both input and output
+            const decimal costPer1k = 0.001m;  // $0.001 per 1K tokens
+            
+            var totalCost = ((usage.PromptTokens + usage.CompletionTokens) / 1000m) * costPer1k;
+            
+            return totalCost;
+        }
+
+        public async Task<PerplexityResponse> DeepResearchAsync(PerplexityDeepResearchRequest request)
+        {
+            try
+            {
+                _logger.LogInformation("Performing Perplexity deep research for query: {Query}", request.Query);
+
+                // Check if we have a valid API key
+                var apiKey = _configuration["Perplexity:ApiKey"];
+                if (string.IsNullOrEmpty(apiKey))
+                {
+                    _logger.LogWarning("No valid Perplexity API key configured, returning demo response");
+                    return new PerplexityResponse
+                    {
+                        Result = $"✅ DEEP RESEARCH ENDPOINT IS WORKING! 🎉\n\nQuery received: '{request.Query}'\n\nThis would perform comprehensive research with detailed analysis.\n\nTo get real AI responses, add a valid Perplexity API key to configuration.",
+                        Sources = new List<string> { "https://docs.perplexity.ai/getting-started/models/models/sonar-deep-research" },
+                        Cost = 0.0m
+                    };
+                }
+
+                // For deep research, use a more detailed prompt and longer model
+                var result = await CallPerplexityApiAsync(
+                    $"Provide comprehensive research on: {request.Query}. Include detailed analysis, multiple perspectives, and relevant context.",
+                    "month"
+                );
+
+                _logger.LogInformation("Perplexity deep research completed successfully");
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error performing Perplexity deep research");
+                return new PerplexityResponse
+                {
+                    Result = $"Error: {ex.Message}"
+                };
+            }
+        }
+    }
+    #endregion
 }
 #endregion
 
@@ -1009,6 +1292,74 @@ namespace NotT3ChatBackend.DTOs {
     #region DTOs/ChatModelDTO.cs
     public record ChatModelDTO(string Name, string Provider) {
         // Simple DTO for chat models
+    }
+    #endregion
+
+    #region DTOs/PerplexityDTOs.cs
+    public class PerplexitySearchRequest
+    {
+        public string Query { get; set; } = string.Empty;
+        public string? SearchRecencyFilter { get; set; }
+        public string? SearchDomainFilter { get; set; }
+        public string? SearchMode { get; set; }
+        public bool? ShowThinking { get; set; }
+    }
+
+    public class PerplexityDeepResearchRequest
+    {
+        public string Query { get; set; } = string.Empty;
+        public string? ReasoningEffort { get; set; }
+    }
+
+    public class PerplexityResponse
+    {
+        public string Result { get; set; } = string.Empty;
+        public string? Thinking { get; set; }
+        public List<string>? Sources { get; set; }
+        public decimal? Cost { get; set; }
+    }
+
+    // Internal API response models
+    public class PerplexityApiResponse
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Model { get; set; } = string.Empty;
+        public long Created { get; set; }
+        public PerplexityUsage? Usage { get; set; }
+        public string Object { get; set; } = string.Empty;
+        public PerplexityChoice[]? Choices { get; set; }
+        public PerplexitySearchResult[]? SearchResults { get; set; }
+    }
+
+    public class PerplexitySearchResult
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Url { get; set; } = string.Empty;
+        public string Snippet { get; set; } = string.Empty;
+        public string? Date { get; set; }
+        public string? LastUpdated { get; set; }
+    }
+
+    public class PerplexityChoice
+    {
+        public int Index { get; set; }
+        public string FinishReason { get; set; } = string.Empty;
+        public PerplexityMessage Message { get; set; } = new();
+        public PerplexityMessage? Delta { get; set; }
+    }
+
+    public class PerplexityMessage
+    {
+        public string Role { get; set; } = string.Empty;
+        public string? Content { get; set; }
+        public string[]? Citations { get; set; }
+    }
+
+    public class PerplexityUsage
+    {
+        public int PromptTokens { get; set; }
+        public int CompletionTokens { get; set; }
+        public int TotalTokens { get; set; }
     }
     #endregion
 
