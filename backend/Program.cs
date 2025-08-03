@@ -208,14 +208,14 @@ namespace NotT3ChatBackend
             Log.Information("Mapping endpoints");
             app.MapGet("/health", (ILogger<Program> logger) =>
             {
-                var dbPath = "/mnt/azurefileshare/database.dat";
-                var directory = Path.GetDirectoryName(dbPath);
-                connectionString = $"Data Source={dbPath}";
-                // get content of the test.txt file in directory to variable
-                var testFileContent = File.ReadAllText(Path.Combine(directory!, "test.txt"));
-
+                var testFileContent = DateTime.UtcNow.ToString("o");
+                if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
+                {
+                    var dbPath = "/mnt/azurefileshare/database.dat";
+                    var directory = Path.GetDirectoryName(dbPath);
+                    testFileContent = File.ReadAllText(Path.Combine(directory!, "test.txt"));
+                }
                 logger.LogInformation("Health check requested");
-
                 return TypedResults.Ok(testFileContent);
             });
             app.MapIdentityApi<NotT3User>();
