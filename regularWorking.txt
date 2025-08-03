@@ -5,3 +5,19 @@ az acr login --name $acrName
 docker push "$acrLoginServer/nott3chat-backend:latest"   
 docker images "$acrLoginServer/nott3chat-backend"
 .\clearImage.ps1
+
+//// Fronted deploye:
+cd front-end
+pnpm install
+pnpm run build
+
+# Get deployment token from Azure Portal
+az staticwebapp secrets list --name "nott3chat-frontend" --resource-group "nott3chat-rg" 
+
+az staticwebapp secrets list --name "nott3chat-frontend" --resource-group "nott3chat-rg"  --query "properties.apiKey" --output tsv
+
+# Deploy the built files
+npx @azure/static-web-apps-cli deploy ./dist --deployment-token "YOUR_DEPLOYMENT_TOKEN" --env production
+
+// static web env
+"VITE_API_URL": "https://webappapi.azurewebsites.net"
