@@ -1,0 +1,7 @@
+$acrName = "HubChat"    
+$acrLoginServer = az acr show --name $acrName --query loginServer --output tsv    
+az acr login --name $acrName 
+.\buildDocker.ps1 -ImageTag "latest"         
+docker push "$acrLoginServer/nott3chat-backend:latest"   
+docker images "$acrLoginServer/nott3chat-backend"
+.\clearImage.ps1
