@@ -39,9 +39,20 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(true);
       return { success: true };
     } catch (error) {
+      let errorMessage;
+      
+      // Check if there's no response (network error, server down, CORS error)
+      if (!error.response) {
+        errorMessage = 'Server currently not available';
+      } else if (error.response?.status === 404) {
+        errorMessage = 'Server currently not available';
+      } else {
+        errorMessage = error.response?.data?.message || 'Login failed';
+      }
+      
       return {
         success: false,
-        error: error.response?.data?.message || 'Login failed',
+        error: errorMessage,
       };
     }
   }, []);

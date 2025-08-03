@@ -12,9 +12,9 @@ pnpm install
 pnpm run build
 
 # Get deployment token from Azure Portal
-az staticwebapp secrets list --name "nott3chat-frontend" --resource-group "nott3chat-rg" 
+az staticwebapp secrets list --name "TestWebApp" --resource-group "chat" 
 
-az staticwebapp secrets list --name "nott3chat-frontend" --resource-group "nott3chat-rg"  --query "properties.apiKey" --output tsv
+az staticwebapp secrets list --name "TestWebApp" --resource-group "chat"  --query "properties.apiKey" --output tsv
 
 # Deploy the built files
 npx @azure/static-web-apps-cli deploy ./dist --deployment-token "YOUR_DEPLOYMENT_TOKEN" --env production
