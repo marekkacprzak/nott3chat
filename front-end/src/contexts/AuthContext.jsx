@@ -46,16 +46,20 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  const register = useCallback(async (email, password) => {
+  const register = useCallback(async (username, email, password) => {
     try {
-      await api.post('/register', { email, password });
+      await api.post('/register-user', { 
+        username: username,
+        userEmail: email, 
+        password: password 
+      });
       // After successful registration, log the user in
       const loginResult = await login(email, password);
       return loginResult;
     } catch (error) {
       return {
         success: false,
-        error: error.response?.data?.message || 'Registration failed',
+        error: error.response?.data?.message || error.response?.data?.title || 'Registration failed',
       };
     }
   }, [login]);

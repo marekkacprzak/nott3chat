@@ -33,6 +33,27 @@ namespace NotT3ChatBackend
     #region Program.cs
     public class Program
     {
+        public static Tuple<string, string> GenerateSecurityStamp(string password)
+        {
+            int length = 32;
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            var random = new Random();
+            var stamp = new string(Enumerable.Repeat(chars, length)
+                .Select(s => s[random.Next(s.Length)]).ToArray());
+            var hasher = new PasswordHasher<IdentityUser>();
+            var hash = hasher.HashPassword(null, password);
+            return new Tuple<string, string>(stamp, hash);
+        }
+
+        public static async Task CreateUser(string userName, string email, string password, UserManager<NotT3User> userManager)
+        {
+            var user = new NotT3User { UserName = userName, Email = email };
+            var result = await userManager.CreateAsync(user, password);
+            if (!result.Succeeded)
+            {
+                throw new Exception($"Failed to create user: {string.Join(", ", result.Errors.Select(e => e.Description))}");
+            }
+        }
         public static async Task Main(string[] args)
         {
             await Task.Delay(0);
@@ -51,22 +72,30 @@ namespace NotT3ChatBackend
                 .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
                 .CreateBootstrapLogger();
 
-            builder.Services.AddApplicationInsightsTelemetry();             
+            if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
+            {
+                builder.Services.AddApplicationInsightsTelemetry();
+            }
 
-            builder.Host.UseSerilog((context, services, loggerConfiguration) => loggerConfiguration
-                .ReadFrom.Configuration(context.Configuration)
-                .ReadFrom.Services(services)
-                .Enrich.FromLogContext()
-                .Enrich.WithProperty("Application", "NotT3ChatBackend")
-                .Enrich.WithProperty("DeployTime", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"))
-                .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
-                .WriteTo.Console() // Continue console logging after startup (optional)
-                .WriteTo.ApplicationInsights(
-                    context.Configuration["APPLICATIONINSIGHTS:CONNECTIONSTRING"],
-                    TelemetryConverter.Traces,
-                    restrictedToMinimumLevel: LogEventLevel.Information // You can adjust this level
-                )
-            );
+            builder.Host.UseSerilog((context, services, loggerConfiguration) =>
+            {
+                var config = loggerConfiguration
+                    .ReadFrom.Configuration(context.Configuration)
+                    .ReadFrom.Services(services)
+                    .Enrich.FromLogContext()
+                    .Enrich.WithProperty("Application", "NotT3ChatBackend")
+                    .Enrich.WithProperty("DeployTime", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"))
+                    .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
+                    .WriteTo.Console(); // Continue console logging after startup (optional)
+                if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
+                {
+                    config.WriteTo.ApplicationInsights(
+                        context.Configuration["APPLICATIONINSIGHTS:CONNECTIONSTRING"],
+                        TelemetryConverter.Traces,
+                        restrictedToMinimumLevel: LogEventLevel.Information // You can adjust this level
+                    );
+                }
+            });
 
             // Development path
             var connectionString = "Data Source=database.dat";
@@ -93,7 +122,6 @@ namespace NotT3ChatBackend
             //  opt.UseInMemoryDatabase("DB"));
                 opt.UseSqlite(connectionString));
             builder.Services.AddMemoryCache();
-            builder.Services.AddSingleton<UserManager<NotT3User>>();
             builder.Services.AddAuthentication();
             builder.Services.AddAuthorization();
             builder.Services.AddEndpointsApiExplorer();
@@ -159,9 +187,7 @@ namespace NotT3ChatBackend
             using (var scope = app.Services.CreateScope()) {
                 var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var userManager = scope.ServiceProvider.GetRequiredService<UserManager<NotT3User>>();
-
                 context.Database.EnsureCreated();
-
 #if DEBUG
                 Log.Information("Creating debug admin user");
                 var adminUser = new NotT3User { UserName = "admin@example.com", Email = "admin@example.com" };
@@ -222,6 +248,7 @@ namespace NotT3ChatBackend.Endpoints
             app.MapPost("/chats/fork", ForkChat).RequireAuthorization();
             app.MapDelete("/chats/{conversationId}", DeleteChat).RequireAuthorization();
             app.MapGet("/chats", GetChats).RequireAuthorization();
+            app.MapPost("/register-user", RegisterUser);
         }
 
         public static async Task<NoContent> DeleteChat(string conversationId, AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger, IHubContext<ChatHub> hubContext) {
@@ -319,6 +346,22 @@ namespace NotT3ChatBackend.Endpoints
             }
             catch (Exception ex) {
                 logger.LogError(ex, "Error creating new conversation");
+                throw;
+            }
+        }
+
+        public static async Task<Ok> RegisterUser([FromBody] RegisterUserRequestDTO request, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger)
+        {
+            logger.LogInformation("Registering new user with username: {Username} and email: {Email}", request.Username, request.UserEmail);
+            try
+            {
+                await Program.CreateUser(request.Username, request.UserEmail, request.Password, userManager);
+                logger.LogInformation("User {Username} registered successfully", request.Username);
+                return TypedResults.Ok();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error registering user {Username}", request.Username);
                 throw;
             }
         }
@@ -967,6 +1010,10 @@ namespace NotT3ChatBackend.DTOs {
     public record ChatModelDTO(string Name, string Provider) {
         // Simple DTO for chat models
     }
+    #endregion
+
+    #region DTOs/RegisterUserRequestDTO.cs
+    public record RegisterUserRequestDTO(string Username, string UserEmail, string Password);
     #endregion
 }
 

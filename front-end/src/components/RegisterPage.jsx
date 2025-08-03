@@ -13,6 +13,7 @@ import { useAuth } from '../contexts/AuthContext';
 import './RegisterPage.css';
 
 const RegisterPage = () => {
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -31,13 +32,34 @@ const RegisterPage = () => {
   // Check if passwords match whenever either password field changes
   const passwordsMatch = useMemo(() => !confirmPassword || password === confirmPassword, [password, confirmPassword]);
   
+  // Email validation
+  const isValidEmail = useMemo(() => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return !email || emailRegex.test(email);
+  }, [email]);
+
+  // Password validation (must match backend requirements)
+  const isValidPassword = useMemo(() => {
+    return !password || password.length >= 5;
+  }, [password]);
+  
   const handleSubmit = useCallback(
     async (e) => {
       e.preventDefault();
       
       // Client-side validation
-      if (!email || !password || !confirmPassword) {
+      if (!username || !email || !password || !confirmPassword) {
         setError('All fields are required');
+        return;
+      }
+      
+      if (!isValidEmail) {
+        setError('Please enter a valid email address');
+        return;
+      }
+
+      if (!isValidPassword) {
+        setError('Password must be at least 5 characters long');
         return;
       }
       
@@ -49,7 +71,7 @@ const RegisterPage = () => {
       setError('');
       setLoading(true);
 
-      const result = await register(email, password);
+      const result = await register(username, email, password);
 
       if (result.success) {
         navigate('/chat');
@@ -59,7 +81,7 @@ const RegisterPage = () => {
 
       setLoading(false);
     },
-    [email, password, confirmPassword, passwordsMatch, register, navigate]
+    [username, email, password, confirmPassword, passwordsMatch, isValidEmail, isValidPassword, register, navigate]
   );
 
   return (
@@ -86,13 +108,27 @@ const RegisterPage = () => {
                 margin="normal"
                 required
                 fullWidth
+                id="username"
+                label="Username"
+                name="username"
+                autoComplete="username"
+                autoFocus
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+              <TextField
+                margin="normal"
+                required
+                fullWidth
                 id="email"
                 label="Email"
                 name="email"
+                type="email"
                 autoComplete="email"
-                autoFocus
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                error={!isValidEmail}
+                helperText={!isValidEmail ? "Please enter a valid email address" : ''}
               />
               <TextField
                 margin="normal"
@@ -105,6 +141,14 @@ const RegisterPage = () => {
                 autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                error={password.length > 0 && !isValidPassword}
+                helperText={
+                  password.length > 0 && !isValidPassword 
+                    ? "Password must be at least 5 characters long" 
+                    : password.length === 0 
+                    ? "Minimum 5 characters required"
+                    : ''
+                }
               />
               <TextField
                 margin="normal"
@@ -125,7 +169,7 @@ const RegisterPage = () => {
                 fullWidth
                 variant="contained"
                 className="submit-button"
-                disabled={loading || !passwordsMatch}
+                disabled={loading || !passwordsMatch || !isValidEmail || !isValidPassword || !username || !email || !password || !confirmPassword}
               >
                 {loading ? 'Registering...' : 'Register'}
               </Button>
