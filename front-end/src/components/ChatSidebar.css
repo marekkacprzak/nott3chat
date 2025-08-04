@@ -14,6 +14,12 @@
   transition: width 0.3s ease;
   margin: 0;
   padding: 0;
+  /* Touch scroll support */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  /* Ensure proper flex behavior */
+  min-height: 0;
+  overflow: hidden;
 }
 
 .chat-sidebar .sidebar-header {
@@ -111,6 +117,10 @@
   gap: 4px;
   max-height: calc(100vh - 200px);
   overflow-y: auto;
+  /* Touch scroll support */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
 }
 
 .chat-sidebar .collapsed-chat-button.selected {
@@ -153,7 +163,54 @@
 
 .chat-sidebar .chat-list-container {
   flex: 1;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(25, 118, 210, 0.5) transparent;
+  /* Touch scroll support */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+  /* Ensure proper height calculation for scrolling */
+  min-height: 0;
+  max-height: calc(100vh - 150px);
+}
+
+/* Custom scrollbar for webkit browsers - only for non-collapsed sidebar */
+.chat-sidebar .chat-list-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-sidebar .chat-list-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-sidebar .chat-list-container::-webkit-scrollbar-thumb {
+  background-color: rgba(25, 118, 210, 0.3);
+  border-radius: 3px;
+  transition: background-color 0.2s ease;
+}
+
+.chat-sidebar .chat-list-container::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(25, 118, 210, 0.6);
+}
+
+/* Hide custom scrollbar for collapsed state - collapsed chats use default browser scrollbar */
+.chat-sidebar .collapsed-chats::-webkit-scrollbar {
+  width: 3px;
+}
+
+.chat-sidebar .collapsed-chats::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-sidebar .collapsed-chats::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+}
+
+.chat-sidebar .collapsed-chats::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.4);
 }
 
 .chat-sidebar .loading-container {
@@ -184,6 +241,12 @@
 
 .chat-sidebar .chat-list {
   padding: 4px;
+  /* Ensure proper scrolling */
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 100%;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .chat-sidebar .chat-item {
