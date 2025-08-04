@@ -837,7 +837,7 @@ namespace NotT3ChatBackend.Services {
                 // Set up request
                 var requestData = new
                 {
-                    model = "sonar",
+                    model = "sonar-reasoning",
                     messages = new[]
                     {
                         new { role = "system", content = "Be precise and concise." },
