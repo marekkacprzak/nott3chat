@@ -17,12 +17,12 @@
 }
 
 .chat-sidebar .sidebar-header {
-  padding: 16px;
+  padding: 0px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.12);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 64px;
+  min-height: 36px;
   margin: 0;
 }
 
@@ -87,11 +87,11 @@
 
 /* Collapsed state styles */
 .chat-sidebar .collapsed-chat-list {
-  padding: 8px;
+  padding: 2px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .chat-sidebar .collapsed-new-chat-button {
@@ -133,7 +133,7 @@
 }
 
 .chat-sidebar .new-chat-section {
-  padding: 16px;
+  padding: 4px;
 }
 
 .chat-sidebar .new-chat-button {
@@ -183,7 +183,7 @@
 }
 
 .chat-sidebar .chat-list {
-  padding: 8px;
+  padding: 4px;
 }
 
 .chat-sidebar .chat-item {
@@ -209,16 +209,31 @@
 .chat-sidebar .chat-content {
   flex: 1;
   min-width: 0;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
 }
 
 .chat-sidebar .chat-actions {
   display: flex;
   opacity: 0;
-  transition: opacity 0.2s;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+  float: right;
+  margin-left: 4px;
+  margin-top: 2px;
+  shape-outside: margin-box;
+}
+
+.chat-sidebar .chat-content::after {
+  content: "";
+  display: table;
+  clear: both;
 }
 
 .chat-sidebar .chat-item:hover .chat-actions {
   opacity: 1;
+  visibility: visible;
 }
 
 .chat-sidebar .delete-button {
@@ -238,21 +253,40 @@
   color: white;
   background-color: rgba(255, 255, 255, 0.1);
 }
-
 .chat-sidebar .chat-title {
   font-weight: 400;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: ellipsis;
   white-space: nowrap;
+  transition: overflow 0.1s ease;
+  padding-right: 8px;
 }
 
 .chat-sidebar .chat-title.selected {
   font-weight: 600;
 }
 
+.chat-sidebar .chat-item:hover .chat-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: calc(100% - 32px);
+  padding-right: 4px;
+}
+
 .chat-sidebar .chat-date {
   opacity: 0.7;
-  font-size: 0.7rem;
+  font-size: 0.6rem;
+}
+
+/* Minimize padding for Material-UI ListItemButton components */
+.chat-sidebar .MuiButtonBase-root.MuiListItemButton-root.MuiListItemButton-gutters,
+.chat-sidebar .MuiListItemButton-root.MuiListItemButton-gutters,
+.chat-sidebar .chat-button.MuiButtonBase-root,
+.chat-sidebar .MuiListItemButton-root {
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
+  padding-left: 4px !important;
+  padding-right: 4px !important;
+  min-height: auto !important;
 }
 
 /* Remove the desktop/mobile drawer styles as they're no longer needed */

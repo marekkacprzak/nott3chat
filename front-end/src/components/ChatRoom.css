@@ -83,19 +83,28 @@
 
 .chat-room .messages-container {
   flex: 1;
-  padding-top: 16px;
-  padding-bottom: 16px;
+  padding-top: 0;
+  padding-bottom: 0;
   display: flex;
   flex-direction: column;
 }
 
+/* Make the scroll target div invisible and take no space */
+.chat-room .messages-container > div:last-child {
+  height: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  overflow: hidden;
+}
+
 .chat-room .input-area {
-  padding: 16px;
+  padding: 4px;
   border-top: 1px solid rgba(0, 0, 0, 0.12);
   background-color: white;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 2px;
   min-height: 120px;
   height: 140px;
   position: relative;
@@ -159,17 +168,43 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0;
 }
 
 .chat-room .model-label {
   min-width: auto;
+  flex-shrink: 0;
+}
+
+/* Make ModelSelector fill available width */
+.chat-room .model-selector-row > div:not(.model-label):not(.send-button) {
+  flex: 1;
+}
+
+/* Make MuiFormControl-root fill the available width */
+.chat-room .model-selector-row .MuiFormControl-root {
+  width: 100%;
+  flex: 1;
+}
+
+/* Reduce padding in the model selector combobox */
+.chat-room .model-selector-row .MuiOutlinedInput-input {
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+  padding-left: 7px !important;
+  padding-right: 7px !important;
+}
+
+.chat-room .model-selector-row .MuiSelect-select {
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+  padding-left: 7px !important;
+  padding-right: 7px !important;
 }
 
 .chat-room .message-input-row {
   display: flex;
-  gap: 8px;
+  gap: 0;
   align-items: stretch;
   flex: 1;
   min-height: 0;
@@ -185,14 +220,45 @@
   min-height: 40px !important;
   height: 100% !important;
   max-height: none !important;
+  overflow-y: auto !important;
+  scrollbar-width: thin;
+  scrollbar-color: #9ca3af #f3f4f6;
+}
+
+/* Custom scrollbar for webkit browsers */
+.chat-room .message-input .MuiOutlinedInput-root textarea::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chat-room .message-input .MuiOutlinedInput-root textarea::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 4px;
+}
+
+.chat-room .message-input .MuiOutlinedInput-root textarea::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+  border-radius: 4px;
+}
+
+.chat-room .message-input .MuiOutlinedInput-root textarea::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Reduce padding in message input MuiInputBase-root */
+.chat-room .message-input-row .MuiInputBase-root {
+  padding: 2px !important;
+}
+
+.chat-room .message-input-row .MuiInputBase-input {
+  padding: 4px 6px !important;
 }
 
 .chat-room .send-button {
   min-width: auto;
-  padding-left: 24px;
-  padding-right: 24px;
-  padding-top: 12px;
-  padding-bottom: 12px;
+  padding-left: 12px;
+  padding-right: 12px;
+  padding-top: 6px;
+  padding-bottom: 6px;
   border-radius: 8px;
   height: fit-content;
 }

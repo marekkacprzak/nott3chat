@@ -359,10 +359,26 @@ const ChatRoom = () => {
                       isConnecting
                     }
                   />
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    className="send-button"
+                    form="message-form"
+                    disabled={
+                      (chatId && !isConnected) ||
+                      !messageInput.trim() ||
+                      !!currentAssistantMessage ||
+                      isCreatingChat ||
+                      !!pendingMessage
+                    }
+                  >
+                    <SendIcon />
+                  </Button>
                 </Box>
 
                 {/* Message Input Row */}
                 <Box
+                  id="message-form"
                   component="form"
                   onSubmit={handleSendMessage}
                   className="message-input-row"
@@ -403,20 +419,6 @@ const ChatRoom = () => {
                       }
                     }}
                   />
-                  <Button
-                    type="submit"
-                    variant="contained"
-                    className="send-button"
-                    disabled={
-                      (chatId && !isConnected) ||
-                      !messageInput.trim() ||
-                      !!currentAssistantMessage ||
-                      isCreatingChat ||
-                      !!pendingMessage
-                    }
-                  >
-                    <SendIcon />
-                  </Button>
                 </Box>
               </Box>
             </Paper>

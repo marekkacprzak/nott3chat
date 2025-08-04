@@ -27,9 +27,9 @@ import { useChats } from '../contexts/ChatContext';
 import { formatDate } from '../extra/utils';
 import './ChatSidebar.css';
 
-const DRAWER_WIDTH = 300;
-const COLLAPSED_WIDTH = 60;
-const MIN_WIDTH = 150; // Minimum width before collapsing
+const DRAWER_WIDTH = 200;
+const COLLAPSED_WIDTH = 36;
+const MIN_WIDTH = 120; // Minimum width before collapsing
 
 const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStartCollapsed }) => {
   const { chats, loading, error, hasLoaded, loadChats, deleteChat } = useChats();
@@ -376,6 +376,16 @@ const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStart
                         })}
                       >
                         <Box className="chat-content">
+                          <Box className="chat-actions">
+                            <IconButton
+                              size="small"
+                              onClick={(e) => handleDeleteChat(e, chat.id)}
+                              className="delete-button"
+                              title="Delete chat"
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
                           <Typography
                             variant="body2"
                             className={lcn ('chat-title', {
@@ -387,16 +397,6 @@ const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStart
                           <Typography variant="caption" className="chat-date">
                             {formatDate(chat.createdAt)}
                           </Typography>
-                        </Box>
-                        <Box className="chat-actions">
-                          <IconButton
-                            size="small"
-                            onClick={(e) => handleDeleteChat(e, chat.id)}
-                            className="delete-button"
-                            title="Delete chat"
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
                         </Box>
                       </ListItemButton>
                     </ListItem>

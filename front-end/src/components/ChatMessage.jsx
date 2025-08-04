@@ -125,20 +125,6 @@ const ChatMessage = ({
             assistant: isAssistant,
           })}
         >
-          {/* Avatar */}
-          <Box
-            className={lcn('avatar', {
-              user: isUser,
-              assistant: isAssistant,
-            })}
-          >
-            {isUser ? (
-              <Person fontSize="small" />
-            ) : (
-              <SmartToy fontSize="small" />
-            )}
-          </Box>
-
           {/* Message Content */}
           <Paper
             elevation={1}
@@ -149,6 +135,19 @@ const ChatMessage = ({
               incomplete: isAssistant && !message.isComplete,
             })}
           >
+            {/* Avatar inside message paper */}
+            <Box
+              className={lcn('avatar', {
+                user: isUser,
+                assistant: isAssistant,
+              })}
+            >
+              {isUser ? (
+                <Person fontSize="small" />
+              ) : (
+                <SmartToy fontSize="small" />
+              )}
+            </Box>
             {/* Message Content */}
             <div className="markdown-content">
               {isAssistant ? (
