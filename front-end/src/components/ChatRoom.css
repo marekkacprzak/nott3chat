@@ -16,6 +16,10 @@
   border-color: white;
 }
 
+.chat-room .theme-selector {
+  margin-right: 16px;
+}
+
 .chat-room .menu-button {
   margin-right: 8px;
 }
@@ -68,7 +72,6 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  background-color: #f8f9fa;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -79,7 +82,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(0, 0, 0, 0.6);
 }
 
 .chat-room .messages-container {
@@ -101,8 +103,6 @@
 
 .chat-room .input-area {
   padding: 4px;
-  border-top: 1px solid rgba(0, 0, 0, 0.12);
-  background-color: white;
   display: flex;
   flex-direction: column;
   gap: 2px;

@@ -25,6 +25,7 @@ import { chatApi } from '../services/chatApi';
 import ChatMessage from './ChatMessage';
 import ChatSidebar from './ChatSidebar';
 import ModelSelector from './ModelSelector';
+import ThemeSelector from './ThemeSelector';
 import './ChatRoom.css';
 
 const ChatRoom = () => {
@@ -175,6 +176,12 @@ const ChatRoom = () => {
             <Typography variant="h6" component="div" className="app-bar-title">
               {chatId && activeChat ? activeChat.title : 'New Chat'}
             </Typography>
+            
+            {/* Theme Selector */}
+            <Box sx={{ mr: 2 }}>
+              <ThemeSelector variant="chip" size="small" />
+            </Box>
+            
             <Chip
               label={
                 isConnecting 
@@ -253,9 +260,21 @@ const ChatRoom = () => {
             >
             <Paper elevation={3} className="chat-paper">
               {/* Messages Area */}
-              <Box className="messages-area">
+              <Box 
+                className="messages-area"
+                sx={{
+                  backgroundColor: theme.palette.mode === 'dark' 
+                    ? theme.palette.grey[900] 
+                    : theme.palette.grey[50],
+                }}
+              >
                 {messages.length === 0 ? (
-                  <Box className="empty-state">
+                  <Box 
+                    className="empty-state"
+                    sx={{
+                      color: theme.palette.text.secondary,
+                    }}
+                  >
                     <Typography variant="h6">
                       {isCreatingChat
                         ? 'Connecting to chat...'
@@ -285,7 +304,13 @@ const ChatRoom = () => {
               </Box>
 
               {/* Input Area */}
-              <Box className="input-area">
+              <Box 
+                className="input-area"
+                sx={{
+                  backgroundColor: theme.palette.background.paper,
+                  borderTop: `1px solid ${theme.palette.divider}`,
+                }}
+              >
                 {/* Resize Handle */}
                 <Box 
                   className="resize-handle"

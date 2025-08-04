@@ -10,6 +10,7 @@ import {
   Alert,
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
+import ThemeSelector from './ThemeSelector';
 import './LoginPage.css';
 
 const LoginPage = () => {
@@ -41,6 +42,18 @@ const LoginPage = () => {
 
   return (
     <div className="login-page">
+      {/* Theme Selector positioned in top-right corner */}
+      <Box
+        sx={{
+          position: 'fixed',
+          top: 20,
+          right: 20,
+          zIndex: 1000,
+        }}
+      >
+        <ThemeSelector variant="outlined" size="small" />
+      </Box>
+      
       <Container component="main" maxWidth="xs">
         <Box className="main-container">
           <Paper elevation={3} className="login-paper">

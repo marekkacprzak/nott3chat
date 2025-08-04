@@ -16,7 +16,8 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
-  Button
+  Button,
+  useTheme
 } from '@mui/material';
 import { 
   Person, 
@@ -30,7 +31,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useModels } from '../contexts/ModelsContext';
 import './ChatMessage.css';
 
@@ -50,6 +51,7 @@ const ChatMessage = ({
   isLastMessage
 }) => {
   const { models } = useModels();
+  const theme = useTheme();
   const [regenerateMenuAnchor, setRegenerateMenuAnchor] = useState(null);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [pendingRegenerate, setPendingRegenerate] = useState(null);
@@ -134,6 +136,19 @@ const ChatMessage = ({
               complete: isAssistant && message.isComplete,
               incomplete: isAssistant && !message.isComplete,
             })}
+            sx={{
+              backgroundColor: isUser 
+                ? theme.palette.primary.main 
+                : theme.palette.background.paper,
+              color: isUser 
+                ? theme.palette.primary.contrastText 
+                : theme.palette.text.primary,
+              '&.assistant.incomplete': {
+                backgroundColor: theme.palette.mode === 'dark' 
+                  ? theme.palette.grey[800] 
+                  : theme.palette.grey[100],
+              },
+            }}
           >
             {/* Avatar inside message paper */}
             <Box
@@ -141,6 +156,16 @@ const ChatMessage = ({
                 user: isUser,
                 assistant: isAssistant,
               })}
+              sx={{
+                backgroundColor: isUser 
+                  ? theme.palette.primary.dark 
+                  : theme.palette.mode === 'dark' 
+                    ? theme.palette.grey[700] 
+                    : theme.palette.grey[200],
+                color: isUser 
+                  ? theme.palette.primary.contrastText 
+                  : theme.palette.text.primary,
+              }}
             >
               {isUser ? (
                 <Person fontSize="small" />
@@ -172,7 +197,7 @@ const ChatMessage = ({
                       return !inline && language ? (
                         <div className="markdown-code-block">
                           <SyntaxHighlighter
-                            style={vscDarkPlus}
+                            style={theme.palette.mode === 'dark' ? vscDarkPlus : vs}
                             language={language}
                             PreTag="div"
                             {...props}

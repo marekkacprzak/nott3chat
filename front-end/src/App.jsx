@@ -6,61 +6,18 @@ import {
   Navigate,
   useNavigate,
 } from 'react-router-dom';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { ThemeProvider } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ChatProvider } from './contexts/ChatContext';
 import { ModelsProvider } from './contexts/ModelsContext';
 import { SignalRProvider } from './contexts/SignalRContext';
+import { ThemeModeProvider, useThemeMode } from './contexts/ThemeContext';
 import LoginPage from './components/LoginPage';
 import ChatRoom from './components/ChatRoom';
 import ProtectedRoute from './components/ProtectedRoute';
 import RegisterPage from './components/RegisterPage';
 import { setNavigate } from './services/navigationService';
-
-const theme = createTheme({
-  palette: {
-    mode: 'light',
-    primary: {
-      main: '#2563eb',
-      contrastText: '#ffffff',
-    },
-    secondary: {
-      main: '#7c3aed',
-    },
-    background: {
-      default: '#f8fafc',
-      paper: '#ffffff',
-    },
-    grey: {
-      50: '#f8fafc',
-      100: '#f1f5f9',
-      200: '#e2e8f0',
-    },
-  },
-  typography: {
-    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
-  },
-  components: {
-    MuiButton: {
-      styleOverrides: {
-        root: {
-          textTransform: 'none',
-          fontWeight: 600,
-        },
-      },
-    },
-    MuiTextField: {
-      styleOverrides: {
-        root: {
-          '& .MuiOutlinedInput-root': {
-            borderRadius: 12,
-          },
-        },
-      },
-    },
-  },
-});
 
 const AppRoutes = () => {
   const { isAuthenticated } = useAuth();
@@ -118,7 +75,9 @@ const AppRoutes = () => {
   );
 };
 
-const App = () => {
+const ThemedApp = () => {
+  const { theme } = useThemeMode();
+  
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -128,6 +87,14 @@ const App = () => {
         </Router>
       </AuthProvider>
     </ThemeProvider>
+  );
+};
+
+const App = () => {
+  return (
+    <ThemeModeProvider>
+      <ThemedApp />
+    </ThemeModeProvider>
   );
 };
 
