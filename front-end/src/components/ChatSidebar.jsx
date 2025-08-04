@@ -306,7 +306,7 @@ const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStart
             </IconButton>
             <Divider />
             <Box className="collapsed-chats">
-              {chats.slice(0, 8).map((chat) => (
+              {chats.map((chat) => (
                 <IconButton
                   key={chat.id}
                   onClick={() => handleChatClick(chat.id)}
