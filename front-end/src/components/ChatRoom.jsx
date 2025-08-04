@@ -10,6 +10,8 @@ import {
   AppBar,
   Toolbar,
   Chip,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import {
   Send as SendIcon,
@@ -30,11 +32,17 @@ const ChatRoom = () => {
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [pendingMessage, setPendingMessage] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
+  const [sidebarWidth, setSidebarWidth] = useState(300);
   const messagesEndRef = useRef(null);
   const { logout } = useAuth();
   const { addNewChat, chats, hasLoaded } = useChats();
   const { chatId } = useParams();
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isNarrowDesktop = useMediaQuery('(max-width: 1200px)');
+
+  // Always use permanent sidebar, but start collapsed on narrow screens
+  const shouldStartCollapsed = isNarrowDesktop;
 
   const activeChat = useMemo(() => chats.find(c => c.id == chatId), [chatId, chats]);
 
@@ -155,6 +163,10 @@ const ChatRoom = () => {
     [navigate]
   );
 
+  const handleSidebarResize = useCallback((width) => {
+    setSidebarWidth(width);
+  }, []);
+
   return (
     <div className="chat-room">
       <Box className="chat-container">
@@ -203,8 +215,42 @@ const ChatRoom = () => {
           </Toolbar>
         </AppBar>
 
-        <Box className="main-content sidebar-open">
-          <Container maxWidth="md" className="chat-container-inner">
+        <Box 
+          className="main-layout" 
+          sx={{ 
+            display: 'flex',
+            height: 'calc(100vh - 64px)', // Full height minus AppBar
+            marginTop: 0,
+            paddingTop: 0,
+          }}
+        >
+          {/* Chat Sidebar */}
+          <ChatSidebar
+            onChatSelect={handleChatSelect}
+            currentChatId={chatId}
+            onSidebarResize={handleSidebarResize}
+            shouldStartCollapsed={shouldStartCollapsed}
+          />
+          
+          <Box 
+            className="main-content"
+            sx={{
+              flex: 1,
+              minWidth: 0, // Allows flex item to shrink below its content size
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <Container 
+              maxWidth={false}
+              className="chat-container-inner"
+              sx={{
+                maxWidth: 'none',
+                width: '100%',
+                padding: '16px',
+              }}
+            >
             <Paper elevation={3} className="chat-paper">
               {/* Messages Area */}
               <Box className="messages-area">
@@ -216,8 +262,8 @@ const ChatRoom = () => {
                         : !isConnected && chatId
                           ? 'Connecting to chat room...'
                           : chatId
-                            ? 'This chat is empty. Start the conversation!'
-                            : 'Start a new conversation with the assistant!'}
+                            ? 'This chat is empty.'
+                            : 'Start conversation!'}
                     </Typography>
                   </Box>
                 ) : (
@@ -347,14 +393,9 @@ const ChatRoom = () => {
             </Paper>
           </Container>
         </Box>
-
-        {/* Chat Sidebar */}
-        <ChatSidebar
-          onChatSelect={handleChatSelect}
-          currentChatId={chatId}
-        />
       </Box>
-          </div>
+    </Box>
+  </div>
   );
 };
 

@@ -1,10 +1,19 @@
 /* ChatSidebar styles */
 
+.chat-sidebar {
+  margin: 0;
+  padding: 0;
+}
+
 .chat-sidebar .drawer-content {
-  width: 300px;
+  width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
+  position: relative;
+  transition: width 0.3s ease;
+  margin: 0;
+  padding: 0;
 }
 
 .chat-sidebar .sidebar-header {
@@ -13,6 +22,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 64px;
+  margin: 0;
 }
 
 .chat-sidebar .header-actions {
@@ -20,13 +31,73 @@
   gap: 8px;
 }
 
-.chat-sidebar .close-button {
-  display: none;
+.chat-sidebar .sidebar-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  height: 100% !important;
+  width: 4px;
+  cursor: ew-resize;
+  background-color: transparent;
+  z-index: 1000;
+  transition: background-color 0.2s ease;
 }
 
+.chat-sidebar .sidebar-resize-handle:hover {
+  background-color: #1976d2 !important;
+  opacity: 0.8 !important;
+}
+
+.chat-sidebar .sidebar-resize-handle:active {
+  background-color: #1976d2 !important;
+  opacity: 1 !important;
+}
+
+/* Collapsed state styles */
+.chat-sidebar .collapsed-chat-list {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-sidebar .collapsed-new-chat-button {
+  border: 1px solid #1976d2;
+  color: #1976d2;
+}
+
+.chat-sidebar .collapsed-new-chat-button:hover {
+  background-color: #1976d2;
+  color: white;
+}
+
+.chat-sidebar .collapsed-chats {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.chat-sidebar .collapsed-chat-button.selected {
+  background-color: #1976d2 !important;
+  color: white !important;
+}
+
+/* Mobile and narrow desktop specific styles */
+@media (max-width: 1200px) {
+  .chat-sidebar .sidebar-resize-handle {
+    display: none;
+  }
+}
+
+/* Mobile specific styles */
 @media (max-width: 899px) {
-  .chat-sidebar .close-button {
-    display: inline-flex;
+  .chat-sidebar .drawer-content {
+    border-radius: 0 8px 8px 0;
   }
 }
 
@@ -153,26 +224,4 @@
   font-size: 0.7rem;
 }
 
-.chat-sidebar .desktop-drawer .MuiDrawer-paper {
-  box-sizing: border-box;
-  width: 300px;
-  top: 64px;
-  height: calc(100vh - 64px);
-}
-
-.chat-sidebar .mobile-drawer .MuiDrawer-paper {
-  box-sizing: border-box;
-  width: 300px;
-}
-
-@media (min-width: 900px) {
-  .chat-sidebar .mobile-drawer {
-    display: none;
-  }
-}
-
-@media (max-width: 899px) {
-  .chat-sidebar .desktop-drawer {
-    display: none;
-  }
-}
+/* Remove the desktop/mobile drawer styles as they're no longer needed */
