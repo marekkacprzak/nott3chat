@@ -5,100 +5,100 @@ on:
     branches: [ main, AzureAI ]
   workflow_dispatch:
 
-env:
-  REGISTRY: ${{ secrets.ACR_NAME }}.azurecr.io
-  IMAGE_NAME: nott3chat-backend
+#env:
+#  REGISTRY: ${{ secrets.ACR_NAME }}.azurecr.io
+#  IMAGE_NAME: nott3chat-backend
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     
     steps:
-    - name: 'Checkout GitHub Action'
-      uses: actions/checkout@v4
+    # - name: 'Checkout GitHub Action'
+    #   uses: actions/checkout@v4
 
-    - name: 'Login to Azure'
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    # - name: 'Login to Azure'
+    #   uses: azure/login@v1
+    #   with:
+    #     creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: 'Login to ACR'
-      uses: azure/docker-login@v1
-      with:
-        login-server: ${{ env.REGISTRY }}
-        username: ${{ secrets.ACR_USERNAME }}
-        password: ${{ secrets.ACR_PASSWORD }}
+    # - name: 'Login to ACR'
+    #   uses: azure/docker-login@v1
+    #   with:
+    #     login-server: ${{ env.REGISTRY }}
+    #     username: ${{ secrets.ACR_USERNAME }}
+    #     password: ${{ secrets.ACR_PASSWORD }}
 
-    - name: 'Build and Push Docker Image'
-      run: |
-        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} ./backend
-        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ./backend
-        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+    # - name: 'Build and Push Docker Image'
+    #   run: |
+    #     docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} ./backend
+    #     docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ./backend
+    #     docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+    #     docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-    - name: 'Update Web App Container Image'
-      uses: azure/webapps-deploy@v2
-      with:
-        app-name: ${{ secrets.WEBAPP_NAME }}
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+    # - name: 'Update Web App Container Image'
+    #   uses: azure/webapps-deploy@v2
+    #   with:
+    #     app-name: ${{ secrets.WEBAPP_NAME }}
+    #     images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
-    - name: 'Configure App Settings'
-      run: |
-        az webapp config appsettings set \
-          --resource-group ${{ secrets.RESOURCE_GROUP }} \
-          --name ${{ secrets.WEBAPP_NAME }} \
-          --settings \
-            "ASPNETCORE_ENVIRONMENT=Production" \
-            "WEBSITES_ENABLE_APP_SERVICE_STORAGE=false" \
-            "WEBSITES_PORT=8080" \
-            "AzureOpenAI__Endpoint=${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
-            "AzureOpenAI__Models__0=gpt-4o-mini" \
-            "AzureOpenAI__Models__1=gpt-4o" \
-            "AzureOpenAI__Models__2=gpt-35-turbo" \
-            "AzureOpenAI__TitleModel=gpt-4o-mini" \
-            "AZURE_FILE_STORAGE_MOUNTED=true"
+    # - name: 'Configure App Settings'
+    #   run: |
+    #     az webapp config appsettings set \
+    #       --resource-group ${{ secrets.RESOURCE_GROUP }} \
+    #       --name ${{ secrets.WEBAPP_NAME }} \
+    #       --settings \
+    #         "ASPNETCORE_ENVIRONMENT=Production" \
+    #         "WEBSITES_ENABLE_APP_SERVICE_STORAGE=false" \
+    #         "WEBSITES_PORT=8080" \
+    #         "AzureOpenAI__Endpoint=${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
+    #         "AzureOpenAI__Models__0=gpt-4o-mini" \
+    #         "AzureOpenAI__Models__1=gpt-4o" \
+    #         "AzureOpenAI__Models__2=gpt-35-turbo" \
+    #         "AzureOpenAI__TitleModel=gpt-4o-mini" \
+    #         "AZURE_FILE_STORAGE_MOUNTED=true"
 
-    - name: 'Configure Azure File Storage'
-      run: |
-        # Get storage account key
-        STORAGE_KEY=$(az storage account keys list \
-          --account-name ${{ secrets.STORAGE_ACCOUNT_NAME }} \
-          --resource-group ${{ secrets.RESOURCE_GROUP }} \
-          --query "[0].value" -o tsv)
+    # - name: 'Configure Azure File Storage'
+    #   run: |
+    #     # Get storage account key
+    #     STORAGE_KEY=$(az storage account keys list \
+    #       --account-name ${{ secrets.STORAGE_ACCOUNT_NAME }} \
+    #       --resource-group ${{ secrets.RESOURCE_GROUP }} \
+    #       --query "[0].value" -o tsv)
         
-        # Remove existing mount if exists
-        az webapp config storage-account delete \
-          --resource-group ${{ secrets.RESOURCE_GROUP }} \
-          --name ${{ secrets.WEBAPP_NAME }} \
-          --custom-id "azurefileshare" || true
+    #     # Remove existing mount if exists
+    #     az webapp config storage-account delete \
+    #       --resource-group ${{ secrets.RESOURCE_GROUP }} \
+    #       --name ${{ secrets.WEBAPP_NAME }} \
+    #       --custom-id "azurefileshare" || true
         
-        # Add Azure File Storage mount
-        az webapp config storage-account add \
-          --resource-group ${{ secrets.RESOURCE_GROUP }} \
-          --name ${{ secrets.WEBAPP_NAME }} \
-          --custom-id "azurefileshare" \
-          --storage-type "AzureFiles" \
-          --share-name "nott3chatdata" \
-          --account-name ${{ secrets.STORAGE_ACCOUNT_NAME }} \
-          --access-key $STORAGE_KEY \
-          --mount-path "/mnt/azurefileshare"
+    #     # Add Azure File Storage mount
+    #     az webapp config storage-account add \
+    #       --resource-group ${{ secrets.RESOURCE_GROUP }} \
+    #       --name ${{ secrets.WEBAPP_NAME }} \
+    #       --custom-id "azurefileshare" \
+    #       --storage-type "AzureFiles" \
+    #       --share-name "nott3chatdata" \
+    #       --account-name ${{ secrets.STORAGE_ACCOUNT_NAME }} \
+    #       --access-key $STORAGE_KEY \
+    #       --mount-path "/mnt/azurefileshare"
 
-    - name: 'Health Check'
-      run: |
-        sleep 60
-        curl -f https://${{ secrets.WEBAPP_NAME }}.azurewebsites.net/health || exit 1
+    # - name: 'Health Check'
+    #   run: |
+    #     sleep 60
+    #     curl -f https://${{ secrets.WEBAPP_NAME }}.azurewebsites.net/health || exit 1
 
     - name: 'Deployment Summary'
       run: |
         echo "🎉 Deployment completed successfully!"
-        echo "🌐 Application URL: https://${{ secrets.WEBAPP_NAME }}.azurewebsites.net"
-        echo "🐳 Container Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-        echo "📦 Registry: ${{ env.REGISTRY }}"
-        echo "💾 Storage Account: ${{ secrets.STORAGE_ACCOUNT_NAME }}"
-        echo "📁 File Share: nott3chatdata"
-        echo "📂 Mount Path: /mnt/azurefileshare"
-        echo "🗃️ Database Location: /mnt/azurefileshare/database.dat"
+    #     echo "🌐 Application URL: https://${{ secrets.WEBAPP_NAME }}.azurewebsites.net"
+    #     echo "🐳 Container Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+    #     echo "📦 Registry: ${{ env.REGISTRY }}"
+    #     echo "💾 Storage Account: ${{ secrets.STORAGE_ACCOUNT_NAME }}"
+    #     echo "📁 File Share: nott3chatdata"
+    #     echo "📂 Mount Path: /mnt/azurefileshare"
+    #     echo "🗃️ Database Location: /mnt/azurefileshare/database.dat"
 
-    - name: 'Azure logout'
-      run: |
-        az logout
+    # - name: 'Azure logout'
+    #   run: |
+    #     az logout
