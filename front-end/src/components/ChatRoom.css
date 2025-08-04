@@ -111,11 +111,48 @@
   cursor: ns-resize;
   background: transparent;
   z-index: 10;
+  touch-action: none; /* Prevent default touch behaviors */
+  -webkit-touch-callout: none; /* Disable touch callout on iOS */
+  -webkit-user-select: none; /* Disable text selection */
+  user-select: none;
 }
 
 .chat-room .resize-handle:hover {
   background: rgba(25, 118, 210, 0.1);
   border-top: 2px solid #1976d2;
+}
+
+.chat-room .resize-handle:active {
+  background: rgba(25, 118, 210, 0.2);
+  border-top: 2px solid #1976d2;
+}
+
+/* Mobile-specific touch improvements for message input resize */
+@media (max-width: 768px) {
+  .chat-room .resize-handle {
+    height: 12px; /* Taller touch target on mobile */
+    top: -6px;
+    background: rgba(25, 118, 210, 0.05); /* Subtle background to show it's touchable */
+  }
+  
+  .chat-room .resize-handle:active {
+    background: rgba(25, 118, 210, 0.15);
+    border-top: 3px solid #1976d2;
+  }
+  
+  /* Add visual hint for touch devices */
+  .chat-room .resize-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 30px;
+    height: 3px;
+    background: linear-gradient(to right, transparent, #1976d2, transparent);
+    opacity: 0.4;
+    border-radius: 2px;
+  }
 }
 
 .chat-room .model-selector-row {

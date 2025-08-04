@@ -42,6 +42,10 @@
   background-color: transparent;
   z-index: 1000;
   transition: background-color 0.2s ease;
+  -webkit-touch-callout: none; /* Disable touch callout on iOS */
+  -webkit-user-select: none; /* Disable text selection */
+  user-select: none;
+  touch-action: none; /* Prevent default touch behaviors */
 }
 
 .chat-sidebar .sidebar-resize-handle:hover {
@@ -52,6 +56,33 @@
 .chat-sidebar .sidebar-resize-handle:active {
   background-color: #1976d2 !important;
   opacity: 1 !important;
+}
+
+/* Mobile-specific touch improvements */
+@media (max-width: 768px) {
+  .chat-sidebar .sidebar-resize-handle {
+    width: 8px; /* Wider touch target */
+    background-color: rgba(25, 118, 210, 0.1); /* Slight background to show it's touchable */
+  }
+  
+  .chat-sidebar .sidebar-resize-handle:active {
+    background-color: #1976d2 !important;
+    opacity: 0.6 !important;
+  }
+  
+  /* Add subtle visual hint for touch devices */
+  .chat-sidebar .sidebar-resize-handle::after {
+    content: '';
+    position: absolute;
+    right: 2px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2px;
+    height: 20px;
+    background: linear-gradient(to bottom, transparent, #1976d2, transparent);
+    opacity: 0.5; /* More visible */
+    border-radius: 1px;
+  }
 }
 
 /* Collapsed state styles */
@@ -90,7 +121,7 @@
 /* Mobile and narrow desktop specific styles */
 @media (max-width: 1200px) {
   .chat-sidebar .sidebar-resize-handle {
-    display: none;
+    display: block !important; /* Keep resize handle visible for touch */
   }
 }
 

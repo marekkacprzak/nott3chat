@@ -85,15 +85,56 @@ const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStart
     [deleteChat, currentChatId, onChatSelect]
   );
 
-  // Handle resize functionality
+  // Handle resize functionality for both mouse and touch
   const handleResizeStart = useCallback((event) => {
     event.preventDefault();
-    const startX = event.clientX;
+    
+    // Determine if it's a touch or mouse event
+    const isTouchEvent = event.touches && event.touches.length > 0;
+    const startX = isTouchEvent ? event.touches[0].clientX : event.clientX;
     const startWidth = isCollapsed ? COLLAPSED_WIDTH : sidebarWidth;
+    
+    // Add haptic feedback on mobile (if available)
+    if (isTouchEvent && navigator.vibrate) {
+      navigator.vibrate(10); // Very short vibration
+    }
+    
+    // Track initial touch position for better mobile experience
+    let initialTouchX = startX;
+    let hasMovedSignificantly = false;
 
-    const handleMouseMove = (moveEvent) => {
-      const deltaX = moveEvent.clientX - startX;
+    const handleMove = (moveEvent) => {
+      // Prevent default to avoid scrolling
+      if (isTouchEvent) {
+        moveEvent.preventDefault();
+      }
+      
+      // Get the correct clientX for both touch and mouse events
+      const currentX = moveEvent.touches ? moveEvent.touches[0].clientX : moveEvent.clientX;
+      const deltaX = currentX - startX;
+      
+      // For touch events, check if we've moved significantly
+      if (isTouchEvent && !hasMovedSignificantly) {
+        const totalMovement = Math.abs(currentX - initialTouchX);
+        if (totalMovement > 10) { // 10px threshold
+          hasMovedSignificantly = true;
+        }
+      }
+      
+      // Calculate new width
       const newWidth = Math.max(50, Math.min(500, startWidth + deltaX));
+      
+      // Special handling for expanding from collapsed state on touch
+      if (isTouchEvent && isCollapsed && deltaX > 15) {
+        // If swiping right from collapsed state with enough movement, expand immediately
+        setIsCollapsed(false);
+        const expandedWidth = Math.max(MIN_WIDTH + 20, Math.min(300, startWidth + deltaX)); // Controlled expansion
+        setSidebarWidth(expandedWidth);
+        if (onSidebarResize) {
+          onSidebarResize(expandedWidth);
+        }
+        return;
+      }
       
       // Always update width first, then determine collapsed state
       setSidebarWidth(newWidth);
@@ -120,13 +161,27 @@ const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStart
       }
     };
 
-    const handleMouseUp = () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+    const handleEnd = () => {
+      if (isTouchEvent) {
+        // Remove touch event listeners
+        document.removeEventListener('touchmove', handleMove);
+        document.removeEventListener('touchend', handleEnd);
+      } else {
+        // Remove mouse event listeners
+        document.removeEventListener('mousemove', handleMove);
+        document.removeEventListener('mouseup', handleEnd);
+      }
     };
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    if (isTouchEvent) {
+      // Add touch event listeners with proper options
+      document.addEventListener('touchmove', handleMove, { passive: false });
+      document.addEventListener('touchend', handleEnd, { passive: false });
+    } else {
+      // Add mouse event listeners
+      document.addEventListener('mousemove', handleMove);
+      document.addEventListener('mouseup', handleEnd);
+    }
   }, [sidebarWidth, isCollapsed, onSidebarResize]);
 
   const toggleCollapse = useCallback(() => {
@@ -164,6 +219,7 @@ const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStart
         <Box
           className="sidebar-resize-handle"
           onMouseDown={handleResizeStart}
+          onTouchStart={handleResizeStart}
           sx={{
             position: 'absolute',
             right: 0,
@@ -174,9 +230,18 @@ const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStart
             cursor: 'ew-resize',
             backgroundColor: 'transparent',
             zIndex: 1000,
+            touchAction: 'none', // Prevent scrolling during touch
             '&:hover': {
               backgroundColor: '#1976d2',
               opacity: 0.8,
+            },
+            // Mobile touch improvements
+            '@media (max-width: 768px)': {
+              width: '8px',
+              '&:active': {
+                backgroundColor: '#1976d2',
+                opacity: 0.6,
+              },
             },
           }}
         />
@@ -371,6 +436,7 @@ const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStart
       {/* External resize handle that extends full height */}
       <Box
         onMouseDown={handleResizeStart}
+        onTouchStart={handleResizeStart}
         sx={{
           position: 'absolute',
           right: -3,
@@ -381,9 +447,20 @@ const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStart
           cursor: 'col-resize',
           backgroundColor: 'transparent',
           zIndex: 1001, // Higher than internal handle
+          touchAction: 'none', // Prevent scrolling during touch
           '&:hover': {
             backgroundColor: '#1976d2',
             opacity: 0.8,
+          },
+          // Make it more visible on mobile
+          '@media (max-width: 768px)': {
+            width: 12, // Wider touch target on mobile
+            right: -6,
+            backgroundColor: 'rgba(25, 118, 210, 0.1)', // Slight background for visibility
+            '&:active': {
+              backgroundColor: '#1976d2',
+              opacity: 0.6,
+            },
           },
         }}
       />

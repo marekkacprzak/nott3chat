@@ -309,6 +309,35 @@ const ChatRoom = () => {
                     document.addEventListener('mousemove', handleMouseMove);
                     document.addEventListener('mouseup', handleMouseUp);
                   }}
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    
+                    // Add haptic feedback on mobile (if available)
+                    if (navigator.vibrate) {
+                      navigator.vibrate(10); // Very short vibration
+                    }
+                    
+                    const startY = e.touches[0].clientY;
+                    const inputArea = e.target.parentElement;
+                    const startHeight = inputArea.offsetHeight;
+                    
+                    const handleTouchMove = (moveEvent) => {
+                      // Prevent default to avoid scrolling
+                      moveEvent.preventDefault();
+                      
+                      const deltaY = startY - moveEvent.touches[0].clientY;
+                      const newHeight = Math.max(120, Math.min(400, startHeight + deltaY)); // Add max height for mobile
+                      inputArea.style.height = `${newHeight}px`;
+                    };
+                    
+                    const handleTouchEnd = () => {
+                      document.removeEventListener('touchmove', handleTouchMove);
+                      document.removeEventListener('touchend', handleTouchEnd);
+                    };
+                    
+                    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+                    document.addEventListener('touchend', handleTouchEnd, { passive: false });
+                  }}
                 />
                 
                 {/* Model Selector Row */}
