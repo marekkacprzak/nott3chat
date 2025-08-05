@@ -24,9 +24,28 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuth = useCallback(async () => {
     try {
+      // Check if we have a stored token (for mobile devices)
+      const storedToken = localStorage.getItem('authToken');
+      if (storedToken) {
+        api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+        console.log('🔧 Using stored token for authentication');
+      } else {
+        console.log('🍪 No stored token - using cookie-based authentication');
+      }
+      
       await api.get('/manage/info');
       setIsAuthenticated(true);
-    } catch {
+      console.log('✅ Authentication check successful');
+    } catch (error) {
+      console.warn('⚠️ Authentication check failed:', error?.response?.status);
+      
+      // If token auth fails, remove the invalid token
+      if (localStorage.getItem('authToken')) {
+        localStorage.removeItem('authToken');
+        delete api.defaults.headers.common['Authorization'];
+        console.log('🗑️ Removed invalid token');
+      }
+      
       setIsAuthenticated(false);
     } finally {
       setLoading(false);
@@ -34,14 +53,29 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = useCallback(async (email, password) => {
+    // Use token-based authentication as primary method (no mobile detection)
+    console.info('� Using token-based authentication as primary method');
     try {
-      await api.post('/login?useCookies=true', { email, password });
-      setIsAuthenticated(true);
-      return { success: true };
-    } catch (error) {
-      let errorMessage;
+      const tokenResponse = await api.post('/login?useCookies=false', { email, password });
       
-      // Check if there's no response (network error, server down, CORS error)
+      if (tokenResponse.data?.accessToken) {
+        // Store the token for future requests
+        localStorage.setItem('authToken', tokenResponse.data.accessToken);
+        
+        // Add token to default headers for future requests
+        api.defaults.headers.common['Authorization'] = `Bearer ${tokenResponse.data.accessToken}`;
+        
+        setIsAuthenticated(true);
+        console.log('✅ Token-based authentication successful');
+        return { success: true };
+      } else {
+        console.error('❌ Token response missing accessToken:', tokenResponse.data);
+        throw new Error('Token not received from server');
+      }
+    } catch (error) {
+      console.error('❌ Token-based authentication failed:', error);
+      
+      let errorMessage;
       if (!error.response) {
         errorMessage = 'Server currently not available';
       } else if (error.response?.status === 404) {
@@ -81,7 +115,15 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
+      // Clear both cookie and token authentication
       setIsAuthenticated(false);
+      
+      // Remove stored token if it exists
+      if (localStorage.getItem('authToken')) {
+        localStorage.removeItem('authToken');
+        delete api.defaults.headers.common['Authorization'];
+        console.log('🗑️ Cleared stored auth token');
+      }
     }
   }, []);
 

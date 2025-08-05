@@ -272,6 +272,20 @@ export const SignalRProvider = ({ children }) => {
     const attemptConnection = () => {
       console.log(`SignalR connection attempt ${connectionAttempts.current + 1}`);
       
+      // Check for stored auth token (primary auth method)
+      const authToken = localStorage.getItem('authToken');
+      const connectionHeaders = {
+        'Content-Type': 'application/json',
+      };
+      
+      // Add Authorization header if we have a token
+      if (authToken) {
+        connectionHeaders['Authorization'] = `Bearer ${authToken}`;
+        console.log('🔐 Using token authentication for SignalR connection');
+      } else {
+        console.log('🍪 No token found - using cookie authentication for SignalR connection');
+      }
+      
       const newConnection = new signalR.HubConnectionBuilder()
         .withUrl(url, {
           withCredentials: true,
@@ -279,9 +293,7 @@ export const SignalRProvider = ({ children }) => {
             signalR.HttpTransportType.WebSockets |
             signalR.HttpTransportType.LongPolling,
           skipNegotiation: false,
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: connectionHeaders,
         })
         .withAutomaticReconnect({
           nextRetryDelayInMilliseconds: (retryContext) => {
@@ -301,21 +313,43 @@ export const SignalRProvider = ({ children }) => {
         .start()
         .then(() => {
           let transportName = 'Unknown';
-          // Method 2: Check connection property
-          if (newConnection.connection) {
-            if (newConnection.connection.transport) {
-              // Check for specific transport types based on properties
-              if (newConnection.connection.transport._webSocket) {
+          
+          // Better transport detection using multiple methods
+          try {
+            // Method 1: Check transport constructor name
+            if (newConnection.connection?.transport?.constructor?.name) {
+              const constructorName = newConnection.connection.transport.constructor.name;
+              if (constructorName.includes('WebSocket')) {
                 transportName = 'WebSockets';
-              } else if (newConnection.connection.transport._pollXhr) {
+              } else if (constructorName.includes('LongPolling')) {
                 transportName = 'Long Polling';
-              } else if (newConnection.connection.transport._eventSource) {
+              } else if (constructorName.includes('ServerSentEvents')) {
                 transportName = 'Server-Sent Events';
-              } else if (newConnection.connection.transport.name) {
-                transportName = newConnection.connection.transport.name;
+              } else {
+                transportName = constructorName;
               }
             }
+            
+            // Method 2: Check for specific transport objects/properties
+            if (transportName === 'Unknown' && newConnection.connection?.transport) {
+              const transport = newConnection.connection.transport;
+              if (transport._webSocket || transport.webSocket) {
+                transportName = 'WebSockets';
+              } else if (transport._pollXhr || transport._longRunningPoller || transport.xhr) {
+                transportName = 'Long Polling';
+              } else if (transport._eventSource || transport.eventSource) {
+                transportName = 'Server-Sent Events';
+              }
+            }
+            
+            // Method 3: Check transport name property
+            if (transportName === 'Unknown' && newConnection.connection?.transport?.name) {
+              transportName = newConnection.connection.transport.name;
+            }
+          } catch (error) {
+            console.warn('Failed to detect transport type:', error);
           }
+          
           console.log(`✅ SignalR connection established successfully using ${transportName} transport`);
 
           setConnection(newConnection);
