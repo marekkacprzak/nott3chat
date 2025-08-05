@@ -24,6 +24,10 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
 using Serilog.Events;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
  
 // This code is staying in one file for now as an intentional experiment for .NET 10's dotnet run app.cs feature,
 // but we are aware of the importance of separating so we are currently assigning regions to be split when the time is right.
@@ -33,27 +37,6 @@ namespace NotT3ChatBackend
     #region Program.cs
     public class Program
     {
-        public static Tuple<string, string> GenerateSecurityStamp(string password)
-        {
-            int length = 32;
-            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            var random = new Random();
-            var stamp = new string(Enumerable.Repeat(chars, length)
-                .Select(s => s[random.Next(s.Length)]).ToArray());
-            var hasher = new PasswordHasher<IdentityUser>();
-            var hash = hasher.HashPassword(null, password);
-            return new Tuple<string, string>(stamp, hash);
-        }
-
-        public static async Task CreateUser(string userName, string email, string password, UserManager<NotT3User> userManager)
-        {
-            var user = new NotT3User { UserName = userName, Email = email };
-            var result = await userManager.CreateAsync(user, password);
-            if (!result.Succeeded)
-            {
-                throw new Exception($"Failed to create user: {string.Join(", ", result.Errors.Select(e => e.Description))}");
-            }
-        }
         public static async Task Main(string[] args)
         {
             await Task.Delay(0);
@@ -97,13 +80,10 @@ namespace NotT3ChatBackend
                 }
             });
 
+            Console.WriteLine(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"));
+ 
             // Development path
             var connectionString = "Data Source=database.dat";
-
-            Console.WriteLine(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"));
-            // In your Program.cs, configure SQLite for Linux
- 
-            connectionString = "Data Source=database.dat";
             if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
             {
                 // Azure File Storage path for Linux production
@@ -122,10 +102,8 @@ namespace NotT3ChatBackend
             //  opt.UseInMemoryDatabase("DB"));
                 opt.UseSqlite(connectionString));
             builder.Services.AddMemoryCache();
-            builder.Services.AddAuthentication();
             builder.Services.AddAuthorization();
             builder.Services.AddEndpointsApiExplorer();
-
             // Add CORS services
             builder.Services.AddCors(options =>
             {
@@ -143,11 +121,47 @@ namespace NotT3ChatBackend
                     .SetPreflightMaxAge(TimeSpan.FromSeconds(86400)); // Cache preflight for 24 hours
                 });
             });
-
             builder.Services.AddIdentityApiEndpoints<NotT3User>()
                         .AddRoles<IdentityRole>()
                         .AddEntityFrameworkStores<AppDbContext>()
                         .AddDefaultTokenProviders();
+            
+            // Add JWT Bearer authentication for SignalR
+            var key = GetJwtSecretKey(builder.Configuration);
+
+            builder.Services.AddAuthentication()
+                .AddJwtBearer("SignalRBearer", options =>
+                {
+                    options.RequireHttpsMetadata = false;
+                    options.SaveToken = true;
+                    options.TokenValidationParameters = new TokenValidationParameters
+                    {
+                        ValidateIssuerSigningKey = true,
+                        IssuerSigningKey = new SymmetricSecurityKey(key),
+                        ValidateIssuer = false,
+                        ValidateAudience = false,
+                        ValidateLifetime = true,
+                        ClockSkew = TimeSpan.Zero
+                    };
+
+                    // Configure JWT authentication for SignalR WebSocket connections
+                    options.Events = new JwtBearerEvents
+                    {
+                        OnMessageReceived = context =>
+                        {
+                            var accessToken = context.Request.Query["access_token"];
+
+                            // If the request is for our hub...
+                            var path = context.HttpContext.Request.Path;
+                            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chat"))
+                            {
+                                // Read the token out of the query string
+                                context.Token = accessToken;
+                            }
+                            return Task.CompletedTask;
+                        }
+                    };
+                });
 
             builder.Services.ConfigureApplicationCookie(options =>
             {
@@ -171,9 +185,9 @@ namespace NotT3ChatBackend
                 options.Password.RequireLowercase = false;
                 options.Password.RequireUppercase = false;
             });
-
+            
             builder.Services.AddSignalR();
-            builder.Services.AddSingleton<IOpenAIService, ChatService>();
+            builder.Services.AddSingleton<IOpenAiService, ChatService>();
             builder.Services.AddScoped<StreamingService>();
             builder.Services.AddScoped<IPerplexityService, PerplexityService>();
             builder.Services.AddHttpClient<IPerplexityService, PerplexityService>();
@@ -211,7 +225,7 @@ namespace NotT3ChatBackend
             app.MapGet("/health", (ILogger<Program> logger) =>
             {
                 var testFileContent = DateTime.UtcNow.ToString("o");
-                if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
+                if (false && Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
                 {
                     var dbPath = "/mnt/azurefileshare/database.dat";
                     var directory = Path.GetDirectoryName(dbPath);
@@ -225,9 +239,61 @@ namespace NotT3ChatBackend
                 await signInManager.SignOutAsync();
                 return TypedResults.Ok();
             }).RequireAuthorization();
+            
+            // JWT token endpoint for SignalR
+            app.MapPost("/signalr-token", async (UserManager<NotT3User> userManager, HttpContext context, IConfiguration configuration) => {
+                var user = await userManager.GetUserAsync(context.User);
+                if (user == null) {
+                    return Results.Unauthorized();
+                }
+
+                var key = GetJwtSecretKey(configuration);
+                var tokenHandler = new JwtSecurityTokenHandler();
+                var tokenDescriptor = new SecurityTokenDescriptor
+                {
+                    Subject = new ClaimsIdentity(new[]
+                    {
+                        new Claim(ClaimTypes.NameIdentifier, user.Id),
+                        new Claim(ClaimTypes.Name, user.UserName ?? user.Email ?? ""),
+                        new Claim(ClaimTypes.Email, user.Email ?? "")
+                    }),
+                    Expires = DateTime.UtcNow.AddHours(1),
+                    SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+                };
+
+                var token = tokenHandler.CreateToken(tokenDescriptor);
+                var tokenString = tokenHandler.WriteToken(token);
+
+                return Results.Ok(new { token = tokenString });
+            }).RequireAuthorization();
             app.MapModelEndpoints();
             app.MapChatEndpoints();
             app.Run();
+        }
+        public static Tuple<string, string> GenerateSecurityStamp(string password)
+        {
+            int length = 32;
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            var random = new Random();
+            var stamp = new string(Enumerable.Repeat(chars, length)
+                .Select(s => s[random.Next(s.Length)]).ToArray());
+            var hasher = new PasswordHasher<IdentityUser>();
+            var hash = hasher.HashPassword(new NotT3User(), password);
+            return new Tuple<string, string>(stamp, hash);
+        }
+        public static async Task CreateUser(string userName, string email, string password, UserManager<NotT3User> userManager)
+        {
+            var user = new NotT3User { UserName = userName, Email = email };
+            var result = await userManager.CreateAsync(user, password);
+            if (!result.Succeeded)
+            {
+                throw new Exception($"Failed to create user: {string.Join(", ", result.Errors.Select(e => e.Description))}");
+            }
+        }
+        private static byte[] GetJwtSecretKey(IConfiguration configuration)
+        {
+            var jwtSecretKey = configuration["Jwt:SecretKey"] ?? "ThisIsAVeryLongSecretKeyForJWTTokenGeneration123456789";
+            return Encoding.ASCII.GetBytes(jwtSecretKey);
         }
     }
 }
@@ -245,7 +311,13 @@ namespace NotT3ChatBackend.Endpoints
     {
         public static void MapChatEndpoints(this IEndpointRouteBuilder app)
         {
-            app.MapHub<ChatHub>("/chat").RequireAuthorization();
+            app.MapHub<ChatHub>("/chat").RequireAuthorization(policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.AuthenticationSchemes.Add(IdentityConstants.ApplicationScheme);
+                policy.AuthenticationSchemes.Add(IdentityConstants.BearerScheme);
+                policy.AuthenticationSchemes.Add("SignalRBearer"); // Add our custom JWT scheme for SignalR
+            });
             app.MapPost("/chats/new", NewChat).RequireAuthorization();
             app.MapPost("/chats/fork", ForkChat).RequireAuthorization();
             app.MapDelete("/chats/{conversationId}", DeleteChat).RequireAuthorization();
@@ -352,7 +424,7 @@ namespace NotT3ChatBackend.Endpoints
             }
         }
 
-        public static async Task<Ok> RegisterUser([FromBody] RegisterUserRequestDTO request, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger)
+        public static async Task<Ok> RegisterUser([FromBody] RegisterUserRequestDto request, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger)
         {
             logger.LogInformation("Registering new user with username: {Username} and email: {Email}", request.Username, request.UserEmail);
             try
@@ -378,8 +450,8 @@ namespace NotT3ChatBackend.Endpoints
             app.MapGet("/models", GetAvailableModels);
         }
 
-        public static Ok<ICollection<ChatModelDTO>> GetAvailableModels(IOpenAIService openAIService, ILogger<ModelEndpointsMarker> logger) {
-            var models = openAIService.GetAvailableModels();
+        public static Ok<ICollection<ChatModelDto>> GetAvailableModels(IOpenAiService openAiService, ILogger<ModelEndpointsMarker> logger) {
+            var models = openAiService.GetAvailableModels();
             logger.LogInformation("Retrieved {Count} available models", models.Count);
             return TypedResults.Ok(models);
         }
@@ -389,21 +461,21 @@ namespace NotT3ChatBackend.Endpoints
 
 namespace NotT3ChatBackend.Services {
     #region Services/IOpenAIService.cs
-    public interface IOpenAIService {
-        ICollection<ChatModelDTO> GetAvailableModels();
+    public interface IOpenAiService {
+        ICollection<ChatModelDto> GetAvailableModels();
         Task InitiateConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete);
         Task InitiateTitleAssignment(string initialMessage, Func<string, ValueTask> onComplete);
     }
     #endregion
 
     #region Services/ChatService.cs
-    public class ChatService : IOpenAIService {
+    public class ChatService : IOpenAiService {
         private readonly ILogger<ChatService> _logger;
         private readonly IConfiguration _configuration;
         private readonly HttpClient _httpClient;
         private readonly string[] _models;
         private readonly string? _titleModel;
-        private readonly bool _useOpenAI;
+        private readonly bool _useOpenAi;
         private readonly AzureOpenAIClient? _azureClient;
         private readonly IPerplexityService _perplexityService;
 
@@ -414,11 +486,11 @@ namespace NotT3ChatBackend.Services {
             _perplexityService = perplexityService;
 
             // Check OpenAI configuration first (preferred)
-            var openAIApiKey = configuration["OpenAI:ApiKey"] ?? GetOpenApiKey(configuration);
-            if (!string.IsNullOrEmpty(openAIApiKey))
+            var openAiApiKey = configuration["OpenAI:ApiKey"] ?? GetOpenApiKeyFromVault(configuration);
+            if (!string.IsNullOrEmpty(openAiApiKey))
             {
-                _useOpenAI = true;
-                _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", openAIApiKey);
+                _useOpenAi = true;
+                _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", openAiApiKey);
                 var modelsConfig = configuration.GetSection("OpenAI:Models").Get<string[]>();
                 _models = modelsConfig ?? ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"];
                 _titleModel = configuration["OpenAI:TitleModel"] ?? "gpt-4o-mini";
@@ -426,7 +498,7 @@ namespace NotT3ChatBackend.Services {
             }
             else {
                 // Fallback to Azure OpenAI
-                _useOpenAI = false;
+                _useOpenAi = false;
                 var azureEndpoint = configuration["AzureOpenAI:Endpoint"];
                 if (string.IsNullOrEmpty(azureEndpoint)) {
                     throw new InvalidOperationException("Either OpenAI:ApiKey or AzureOpenAI:Endpoint configuration is required");
@@ -442,7 +514,7 @@ namespace NotT3ChatBackend.Services {
             }
         }
 
-        public static string GetOpenApiKey(IConfiguration configuration)
+        private static string GetOpenApiKeyFromVault(IConfiguration configuration)
         {
             // Add Azure Key Vault Configuration
             var keyVaultUrl = configuration["KeyVaultUrl"];
@@ -457,15 +529,15 @@ namespace NotT3ChatBackend.Services {
             return string.Empty;
         }
 
-        public ICollection<ChatModelDTO> GetAvailableModels()
+        public ICollection<ChatModelDto> GetAvailableModels()
         {
-            var provider = _useOpenAI ? "OpenAI" : "Azure OpenAI";
-            return _models.Select(m => new ChatModelDTO(m, provider)).ToList();
+            var provider = _useOpenAi ? "OpenAI" : "Azure OpenAI";
+            return _models.Select(m => new ChatModelDto(m, provider)).ToList();
         }
 
         public async Task InitiateConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
             _logger.LogInformation("Initiating conversation with model: {Model}, message count: {MessageCount}, provider: {Provider}", 
-                model, messages.Count, _useOpenAI ? "OpenAI" : "Azure OpenAI");
+                model, messages.Count, _useOpenAi ? "OpenAI" : "Azure OpenAI");
 
             try {
                 // Handle Perplexity model differently
@@ -473,7 +545,7 @@ namespace NotT3ChatBackend.Services {
                 {
                     await InitiatePerplexityConversationAsync(model, messages, onContentReceived, onComplete);
                 }
-                else if (_useOpenAI) {
+                else if (_useOpenAi) {
                     await InitiateOpenAIConversationAsync(model, messages, onContentReceived, onComplete);
                 }
                 else {
@@ -508,10 +580,9 @@ namespace NotT3ChatBackend.Services {
             var stream = await response.Content.ReadAsStreamAsync();
             using var reader = new StreamReader(stream);
 
-            string? line;
             var contentBuilder = new StringBuilder();
 
-            while ((line = await reader.ReadLineAsync()) != null) {
+            while (await reader.ReadLineAsync() is { } line) {
                 if (line.StartsWith("data: ")) {
                     var data = line.Substring(6);
                     if (data == "[DONE]") {
@@ -524,10 +595,10 @@ namespace NotT3ChatBackend.Services {
                         if (choices.GetArrayLength() > 0) {
                             var delta = choices[0].GetProperty("delta");
                             if (delta.TryGetProperty("content", out var contentElement)) {
-                                var content_text = contentElement.GetString();
-                                if (!string.IsNullOrEmpty(content_text)) {
-                                    contentBuilder.Append(content_text);
-                                    await onContentReceived(content_text);
+                                var contentText = contentElement.GetString();
+                                if (!string.IsNullOrEmpty(contentText)) {
+                                    contentBuilder.Append(contentText);
+                                    await onContentReceived(contentText);
                                 }
                             }
                         }
@@ -623,11 +694,11 @@ namespace NotT3ChatBackend.Services {
             }
 
             _logger.LogInformation("Initiating title assignment with model: {Model}, provider: {Provider}", 
-                _titleModel, _useOpenAI ? "OpenAI" : "Azure OpenAI");
+                _titleModel, _useOpenAi ? "OpenAI" : "Azure OpenAI");
 
             try {
-                if (_useOpenAI) {
-                    await InitiateOpenAITitleAssignmentAsync(initialMessage, onComplete);
+                if (_useOpenAi) {
+                    await InitiateOpenAiTitleAssignmentAsync(initialMessage, onComplete);
                 }
                 else {
                     await InitiateAzureTitleAssignmentAsync(initialMessage, onComplete);
@@ -638,7 +709,7 @@ namespace NotT3ChatBackend.Services {
             }
         }
 
-        private async Task InitiateOpenAITitleAssignmentAsync(string initialMessage, Func<string, ValueTask> onComplete) {
+        private async Task InitiateOpenAiTitleAssignmentAsync(string initialMessage, Func<string, ValueTask> onComplete) {
             var requestBody = new {
                 model = _titleModel,
                 messages = new[] {
@@ -696,12 +767,12 @@ namespace NotT3ChatBackend.Services {
 
     #region Services/StreamingService.cs
     public class StreamingService {
-        private readonly IOpenAIService _openAIService;
+        private readonly IOpenAiService _openAiService;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IMemoryCache _memoryCache;
         private readonly ILogger<StreamingService> _logger;
-        public StreamingService(IOpenAIService openAIService, IServiceScopeFactory scopeFactory, IMemoryCache memoryCache, ILogger<StreamingService> logger) {
-            _openAIService = openAIService;
+        public StreamingService(IOpenAiService openAiService, IServiceScopeFactory scopeFactory, IMemoryCache memoryCache, ILogger<StreamingService> logger) {
+            _openAiService = openAiService;
             _scopeFactory = scopeFactory;
             _memoryCache = memoryCache;
             _logger = logger;
@@ -712,7 +783,7 @@ namespace NotT3ChatBackend.Services {
             var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
             var convo = await dbContext.GetConversationAsync(convoId, user);
 
-            await _openAIService.InitiateConversationAsync(model, messages,
+            await _openAiService.InitiateConversationAsync(model, messages,
                 onContentReceived: async (content) => {
                     await streamingMessage.Semaphore.WaitAsync();
                     try {
@@ -756,7 +827,7 @@ namespace NotT3ChatBackend.Services {
             var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
             var convo = await dbContext.GetConversationAsync(convoId, user);
 
-            await _openAIService.InitiateTitleAssignment(userMsg.Content, async title => {
+            await _openAiService.InitiateTitleAssignment(userMsg.Content, async title => {
                 string finalTitle = title[..Math.Min(40, title.Length)]; // ~6 words
                 convo.Title = finalTitle;
                 await dbContext.SaveChangesAsync();
@@ -764,7 +835,8 @@ namespace NotT3ChatBackend.Services {
             });
         }
     }
-
+    #endregion
+    
     #region Services/PerplexityService.cs
     public interface IPerplexityService
     {
@@ -778,10 +850,7 @@ namespace NotT3ChatBackend.Services {
         private readonly HttpClient _httpClient;
         private readonly IConfiguration _configuration;
 
-        public PerplexityService(
-            ILogger<PerplexityService> logger,
-            HttpClient httpClient,
-            IConfiguration configuration)
+        public PerplexityService(ILogger<PerplexityService> logger, HttpClient httpClient, IConfiguration configuration)
         {
             _logger = logger;
             _httpClient = httpClient;
@@ -944,9 +1013,9 @@ namespace NotT3ChatBackend.Services {
             if (usage == null) return 0;
             
             // Pricing for sonar model: $1 per 1M tokens for both input and output
-            const decimal costPer1k = 0.001m;  // $0.001 per 1K tokens
+            const decimal costPer1K = 0.001m;  // $0.001 per 1K tokens
             
-            var totalCost = ((usage.PromptTokens + usage.CompletionTokens) / 1000m) * costPer1k;
+            var totalCost = ((usage.PromptTokens + usage.CompletionTokens) / 1000m) * costPer1K;
             
             return totalCost;
         }
@@ -991,7 +1060,6 @@ namespace NotT3ChatBackend.Services {
     }
     #endregion
 }
-#endregion
 
 #region Hubs/ChatHub.cs
 namespace NotT3ChatBackend.Hubs {
@@ -1240,13 +1308,18 @@ namespace NotT3ChatBackend.Models {
     public class NotT3Conversation {
         [Key]
         public string Id { get; set; } = Guid.NewGuid().ToString();
+        
         public DateTime CreatedAt { get; } = DateTime.UtcNow;
+        
         public string Title { get; set; } = "New Chat";
+        
         public required string UserId { get; set; }
+        
         public bool IsStreaming { get; set; } = false;
 
         // Navigators
         public NotT3User? User { get; set; }
+        
         public List<NotT3Message> Messages { get; set; } = [];
     }
     #endregion
@@ -1255,18 +1328,25 @@ namespace NotT3ChatBackend.Models {
     public class NotT3Message {
         [Key]
         public string Id { get; set; } = Guid.NewGuid().ToString();
+
         public required int Index { get; set; }
+
         public required string Role { get; set; }
+
         public required string Content { get; set; }
+
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+
         public string? ChatModel { get; set; }
+
         public string? FinishError { get; set; }
 
         public required string ConversationId { get; set; }
+
         public required string UserId { get; set; }
 
-        // Navigators
         public NotT3Conversation? Conversation { get; set; }
+
         public NotT3User? User { get; set; }
     }
     #endregion
@@ -1289,8 +1369,8 @@ namespace NotT3ChatBackend.DTOs {
     public record ForkChatRequestDTO(string ConversationId, string MessageId);
     #endregion
 
-    #region DTOs/ChatModelDTO.cs
-    public record ChatModelDTO(string Name, string Provider) {
+    #region DTOs/ChatModelDto.cs
+    public record ChatModelDto(string Name, string Provider) {
         // Simple DTO for chat models
     }
     #endregion
@@ -1300,6 +1380,7 @@ namespace NotT3ChatBackend.DTOs {
     {
         public string Query { get; set; } = string.Empty;
         public string? SearchRecencyFilter { get; set; }
+        
         public string? SearchDomainFilter { get; set; }
         public string? SearchMode { get; set; }
         public bool? ShowThinking { get; set; }
@@ -1308,12 +1389,14 @@ namespace NotT3ChatBackend.DTOs {
     public class PerplexityDeepResearchRequest
     {
         public string Query { get; set; } = string.Empty;
+        
         public string? ReasoningEffort { get; set; }
     }
 
     public class PerplexityResponse
     {
         public string Result { get; set; } = string.Empty;
+        
         public string? Thinking { get; set; }
         public List<string>? Sources { get; set; }
         public decimal? Cost { get; set; }
@@ -1323,9 +1406,12 @@ namespace NotT3ChatBackend.DTOs {
     public class PerplexityApiResponse
     {
         public string Id { get; set; } = string.Empty;
+        
         public string Model { get; set; } = string.Empty;
+        
         public long Created { get; set; }
         public PerplexityUsage? Usage { get; set; }
+        
         public string Object { get; set; } = string.Empty;
         public PerplexityChoice[]? Choices { get; set; }
         public PerplexitySearchResult[]? SearchResults { get; set; }
@@ -1335,16 +1421,21 @@ namespace NotT3ChatBackend.DTOs {
     {
         public string Title { get; set; } = string.Empty;
         public string Url { get; set; } = string.Empty;
+        
         public string Snippet { get; set; } = string.Empty;
+        
         public string? Date { get; set; }
+        
         public string? LastUpdated { get; set; }
     }
 
     public class PerplexityChoice
     {
         public int Index { get; set; }
+        
         public string FinishReason { get; set; } = string.Empty;
         public PerplexityMessage Message { get; set; } = new();
+        
         public PerplexityMessage? Delta { get; set; }
     }
 
@@ -1359,12 +1450,13 @@ namespace NotT3ChatBackend.DTOs {
     {
         public int PromptTokens { get; set; }
         public int CompletionTokens { get; set; }
+        
         public int TotalTokens { get; set; }
     }
     #endregion
 
     #region DTOs/RegisterUserRequestDTO.cs
-    public record RegisterUserRequestDTO(string Username, string UserEmail, string Password);
+    public record RegisterUserRequestDto(string Username, string UserEmail, string Password);
     #endregion
 }
 
