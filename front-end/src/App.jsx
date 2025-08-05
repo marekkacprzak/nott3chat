@@ -18,6 +18,8 @@ import ChatRoom from './components/ChatRoom';
 import ProtectedRoute from './components/ProtectedRoute';
 import RegisterPage from './components/RegisterPage';
 import { setNavigate } from './services/navigationService';
+import ConsoleLogger from './components/ConsoleLogger';
+import ConsoleLoggerErrorBoundary from './components/ConsoleLoggerErrorBoundary';
 
 const AppRoutes = () => {
   const { isAuthenticated } = useAuth();
@@ -27,6 +29,11 @@ const AppRoutes = () => {
   React.useEffect(() => {
     setNavigate(navigate);
   }, [navigate]);
+
+  // Test console logging for iPhone debugging
+  React.useEffect(() => {
+    console.log('🚀 App loaded successfully');    
+  }, [isAuthenticated]);
 
   return (
     <Routes>
@@ -85,6 +92,9 @@ const ThemedApp = () => {
         <Router>
           <AppRoutes />
         </Router>
+        <ConsoleLoggerErrorBoundary>
+          <ConsoleLogger />
+        </ConsoleLoggerErrorBoundary>
       </AuthProvider>
     </ThemeProvider>
   );

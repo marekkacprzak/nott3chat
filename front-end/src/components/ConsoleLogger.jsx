@@ -24,6 +24,62 @@ const ConsoleLogger = () => {
   const logsEndRef = useRef(null);
   const originalConsole = useRef({});
 
+  // Storage keys for persistence
+  const STORAGE_KEYS = {
+    LOGS: 'consoleLogs',
+    IS_OPEN: 'consoleLoggerOpen',
+    LOG_COUNT: 'consoleLogCount'
+  };
+
+  // Load persisted logs and state on component mount
+  useEffect(() => {
+    try {
+      // Load saved logs
+      const savedLogs = localStorage.getItem(STORAGE_KEYS.LOGS);
+      if (savedLogs) {
+        const parsedLogs = JSON.parse(savedLogs);
+        if (Array.isArray(parsedLogs)) {
+          setLogs(parsedLogs);
+          setLogCount(parsedLogs.length);
+        }
+      }
+
+      // Load saved console state
+      const savedIsOpen = localStorage.getItem(STORAGE_KEYS.IS_OPEN);
+      if (savedIsOpen === 'true') {
+        setIsOpen(true);
+      }
+
+      // Show restoration message if there were saved logs
+      if (savedLogs && JSON.parse(savedLogs).length > 0) {
+        setTimeout(() => {
+          console.info('📋 Console logs restored from previous session');
+        }, 500);
+      }
+    } catch (error) {
+      console.error('Failed to restore console logs:', error);
+    }
+  }, []);
+
+  // Save logs to localStorage whenever logs change
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(logs));
+      localStorage.setItem(STORAGE_KEYS.LOG_COUNT, logCount.toString());
+    } catch (error) {
+      console.error('Failed to save console logs:', error);
+    }
+  }, [logs, logCount]);
+
+  // Save console panel state when it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.IS_OPEN, isOpen.toString());
+    } catch (error) {
+      console.error('Failed to save console state:', error);
+    }
+  }, [isOpen]);
+
   // Detect mobile devices
   useEffect(() => {
     const checkMobile = () => {
@@ -107,11 +163,9 @@ const ConsoleLogger = () => {
 
         setLogs(prevLogs => {
           const newLogs = [...prevLogs, logEntry];
-          // Keep only the last 100 logs to prevent memory issues
-          if (newLogs.length > 100) {
-            return newLogs.slice(-100);
-          }
-          return newLogs;
+          // Keep only the last 200 logs to prevent memory/storage issues
+          const trimmedLogs = newLogs.length > 200 ? newLogs.slice(-200) : newLogs;
+          return trimmedLogs;
         });
 
         setLogCount(prevCount => prevCount + 1);
@@ -151,6 +205,14 @@ const ConsoleLogger = () => {
   const clearLogs = () => {
     setLogs([]);
     setLogCount(0);
+    // Also clear from localStorage
+    try {
+      localStorage.removeItem(STORAGE_KEYS.LOGS);
+      localStorage.removeItem(STORAGE_KEYS.LOG_COUNT);
+      console.info('🗑️ Console logs cleared and removed from storage');
+    } catch (error) {
+      console.error('Failed to clear stored logs:', error);
+    }
   };
 
   const getLogColor = (type) => {
@@ -236,6 +298,21 @@ const ConsoleLogger = () => {
               }}
             />
           )}
+          {/* Show persistence indicator if logs exist */}
+          {logs.length > 0 && (
+            <Chip
+              label="💾"
+              size="small"
+              title="Logs are persisted across page reloads"
+              sx={{
+                backgroundColor: '#4caf50',
+                color: 'white',
+                height: 20,
+                fontSize: 10,
+                minWidth: 24,
+              }}
+            />
+          )}
         </Box>
         
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -296,69 +373,88 @@ const ConsoleLogger = () => {
               No console output yet...
             </Typography>
           ) : (
-            logs.map((log) => (
+            <>
+              {/* Show persistence info */}
               <Box
-                key={log.id}
-                className="console-log-entry"
                 sx={{
-                  marginBottom: '4px',
-                  padding: '4px 8px',
+                  marginBottom: '8px',
+                  padding: '6px 8px',
                   borderRadius: '4px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                  borderLeft: `3px solid ${getLogColor(log.type)}`,
-                  fontSize: '12px',
-                  fontFamily: 'inherit',
-                  wordBreak: 'break-word',
-                  transition: 'background-color 0.2s ease',
-                  '&:hover': {
-                    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                  },
+                  backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                  borderLeft: '3px solid #4caf50',
+                  fontSize: '11px',
+                  color: 'rgba(255, 255, 255, 0.8)',
                 }}
               >
+                <Typography variant="caption" sx={{ fontSize: '10px' }}>
+                  💾 Logs are automatically saved and will persist across page reloads and redirects
+                </Typography>
+              </Box>
+              
+              {logs.map((log) => (
                 <Box
+                  key={log.id}
+                  className="console-log-entry"
                   sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    marginBottom: '2px',
+                    marginBottom: '4px',
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    borderLeft: `3px solid ${getLogColor(log.type)}`,
+                    fontSize: '12px',
+                    fontFamily: 'inherit',
+                    wordBreak: 'break-word',
+                    transition: 'background-color 0.2s ease',
+                    '&:hover': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                    },
                   }}
                 >
-                  <span>{getLogIcon(log.type)}</span>
-                  <Typography
-                    variant="caption"
+                  <Box
                     sx={{
-                      color: getLogColor(log.type),
-                      fontWeight: 'bold',
-                      textTransform: 'uppercase',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      marginBottom: '2px',
                     }}
                   >
-                    {log.type}
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    sx={{ color: 'rgba(255, 255, 255, 0.5)' }}
-                  >
-                    {log.timestamp}
-                  </Typography>
-                </Box>
-                <Box>
-                  {log.args.map((arg, index) => (
+                    <span>{getLogIcon(log.type)}</span>
                     <Typography
-                      key={index}
-                      component="div"
+                      variant="caption"
                       sx={{
-                        color: 'white',
-                        whiteSpace: 'pre-wrap',
-                        fontSize: '11px',
-                        lineHeight: 1.3,
+                        color: getLogColor(log.type),
+                        fontWeight: 'bold',
+                        textTransform: 'uppercase',
                       }}
                     >
-                      {arg}
+                      {log.type}
                     </Typography>
-                  ))}
+                    <Typography
+                      variant="caption"
+                      sx={{ color: 'rgba(255, 255, 255, 0.5)' }}
+                    >
+                      {log.timestamp}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    {log.args.map((arg, index) => (
+                      <Typography
+                        key={index}
+                        component="div"
+                        sx={{
+                          color: 'white',
+                          whiteSpace: 'pre-wrap',
+                          fontSize: '11px',
+                          lineHeight: 1.3,
+                        }}
+                      >
+                        {arg}
+                      </Typography>
+                    ))}
+                  </Box>
                 </Box>
-              </Box>
-            ))
+              ))}
+            </>
           )}
           <div ref={logsEndRef} />
         </Paper>

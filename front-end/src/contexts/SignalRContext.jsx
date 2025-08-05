@@ -51,6 +51,7 @@ export const SignalRProvider = ({ children }) => {
   const [connectionError, setConnectionError] = useState(null);
   const currentChatId = useRef(null);
   const isInitializing = useRef(false);
+  const connectionAttempts = useRef(0);
   const navigate = useNavigate();
   
   const { isAuthenticated } = useAuth();
@@ -202,6 +203,7 @@ export const SignalRProvider = ({ children }) => {
     setCurrentAssistantMessage(null);
     setConnectionError(null);
     isInitializing.current = false;
+    connectionAttempts.current = 0; // Reset connection attempts
     
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
@@ -267,56 +269,98 @@ export const SignalRProvider = ({ children }) => {
 
     const url = `${import.meta.env.VITE_API_URL}/chat`;
 
-    const newConnection = new signalR.HubConnectionBuilder()
-      .withUrl(url, {
-        withCredentials: true,
-        transport:
-          signalR.HttpTransportType.WebSockets |
-          signalR.HttpTransportType.LongPolling,
-        skipNegotiation: false,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-      .withAutomaticReconnect({
-        nextRetryDelayInMilliseconds: (retryContext) => {
-          if (retryContext.elapsedTime < 60000) {
-            return Math.random() * 10000;
-          } else {
-            return null;
-          }
-        },
-      })
-      .configureLogging(signalR.LogLevel.Information)
-      .build();
+    const attemptConnection = () => {
+      console.log(`SignalR connection attempt ${connectionAttempts.current + 1}`);
+      
+      const newConnection = new signalR.HubConnectionBuilder()
+        .withUrl(url, {
+          withCredentials: true,
+          transport:
+            signalR.HttpTransportType.WebSockets |
+            signalR.HttpTransportType.LongPolling,
+          skipNegotiation: false,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+        .withAutomaticReconnect({
+          nextRetryDelayInMilliseconds: (retryContext) => {
+            if (retryContext.elapsedTime < 60000) {
+              return Math.random() * 10000;
+            } else {
+              return null;
+            }
+          },
+        })
+        .configureLogging(signalR.LogLevel.Information)
+        .build();
 
-    setupEventHandlers(newConnection);
-    
-    newConnection
-      .start()
-      .then(() => {
-        setConnection(newConnection);
-        setIsConnected(true);
-        setIsConnecting(false);
-        setConnectionError(null);
-        isInitializing.current = false;
-      })
-      .catch((error) => {
-        console.error('SignalR connection error:', error);
-        setConnectionError(error.message);
-        setIsConnecting(false);
-        isInitializing.current = false;
-        if (error.statusCode === 401) {
-          console.error('SignalR authentication failed - cookies may not be properly configured');
-        }
-      });
+      setupEventHandlers(newConnection);
+      
+      newConnection
+        .start()
+        .then(() => {
+          let transportName = 'Unknown';
+          // Method 2: Check connection property
+          if (newConnection.connection) {
+            if (newConnection.connection.transport) {
+              // Check for specific transport types based on properties
+              if (newConnection.connection.transport._webSocket) {
+                transportName = 'WebSockets';
+              } else if (newConnection.connection.transport._pollXhr) {
+                transportName = 'Long Polling';
+              } else if (newConnection.connection.transport._eventSource) {
+                transportName = 'Server-Sent Events';
+              } else if (newConnection.connection.transport.name) {
+                transportName = newConnection.connection.transport.name;
+              }
+            }
+          }
+          console.log(`✅ SignalR connection established successfully using ${transportName} transport`);
+
+          setConnection(newConnection);
+          setIsConnected(true);
+          setIsConnecting(false);
+          setConnectionError(null);
+          isInitializing.current = false;
+          connectionAttempts.current = 0; // Reset attempts on success
+        })
+        .catch((error) => {
+          console.error(`SignalR connection error (attempt ${connectionAttempts.current + 1}):`, error);
+          connectionAttempts.current++;
+          setConnectionError(error.message);
+          setIsConnecting(false);
+          isInitializing.current = false;
+          
+          if (error.statusCode === 401) {
+            console.error('SignalR authentication failed - cookies may not be properly configured');
+          }
+
+          // If this is the first failure, wait 20 seconds before next attempt
+          if (connectionAttempts.current === 1) {
+            console.log('First connection attempt failed, waiting 20 seconds before retry...');
+            if (reconnectTimeoutRef.current) {
+              clearTimeout(reconnectTimeoutRef.current);
+            }
+            reconnectTimeoutRef.current = setTimeout(() => {
+              console.log('Retrying SignalR connection after 20 second delay...');
+              attemptConnection();
+            }, 20000); // 20 seconds delay
+          }
+        });
+    };
+
+    attemptConnection();
   }, [connection, setupEventHandlers]);
 
   const reconnect = useCallback(() => {
     if (isConnecting) return; // Already connecting, don't start another
     
+    console.log('Manual reconnect requested');
     // Force close any existing connection
     closeConnection();
+    // Reset connection attempts for manual reconnect
+    connectionAttempts.current = 0;
     // Reload chats when manually reconnecting
     loadChats();
     initializeConnection();
