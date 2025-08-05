@@ -1,0 +1,61 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "🌐 Debug Frontend in Chrome",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/front-end/src",
+      "sourceMaps": true,
+      "userDataDir": "${workspaceFolder}/.vscode/chrome-debug-profile",
+      "runtimeArgs": [
+        "--disable-features=VizDisplayCompositor"
+      ]
+    },
+    {
+      "name": "🧅 Debug SignalR Test (Bun)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/signalr-test",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["--inspect", "run", "src/index.ts"],
+      "env": {
+        "NODE_ENV": "development",
+        "DEBUG": "*"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/node_modules/**"
+      ],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/signalr-test/**",
+        "!**/node_modules/**"
+      ],
+      "sourceMaps": true,
+      "smartStep": true,
+      "restart": true
+    },
+    {
+      "name": "🔧 Debug Backend (.NET)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build-backend",
+      "program": "${workspaceFolder}/backend/bin/Debug/net9.0/NotT3ChatBackend.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/backend",
+      "stopAtEntry": false,
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://0.0.0.0:80"
+      },
+      "sourceFileMap": {
+        "/Views": "${workspaceFolder}/backend/Views"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "openOnSessionStart"
+    },
+  ]
+}
