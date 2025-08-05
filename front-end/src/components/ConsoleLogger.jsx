@@ -49,13 +49,6 @@ const ConsoleLogger = () => {
       if (savedIsOpen === 'true') {
         setIsOpen(true);
       }
-
-      // Show restoration message if there were saved logs
-      if (savedLogs && JSON.parse(savedLogs).length > 0) {
-        setTimeout(() => {
-          console.info('📋 Console logs restored from previous session');
-        }, 500);
-      }
     } catch (error) {
       console.error('Failed to restore console logs:', error);
     }
@@ -209,7 +202,6 @@ const ConsoleLogger = () => {
     try {
       localStorage.removeItem(STORAGE_KEYS.LOGS);
       localStorage.removeItem(STORAGE_KEYS.LOG_COUNT);
-      console.info('🗑️ Console logs cleared and removed from storage');
     } catch (error) {
       console.error('Failed to clear stored logs:', error);
     }
@@ -349,7 +341,7 @@ const ConsoleLogger = () => {
             overflow: 'auto',
             backgroundColor: 'rgba(0, 0, 0, 0.95)',
             color: 'white',
-            padding: '8px',
+            padding: '2px',
             borderRadius: 0,
             WebkitOverflowScrolling: 'touch', // Smooth scrolling on iOS
             scrollbarWidth: 'thin', // Firefox
@@ -382,13 +374,10 @@ const ConsoleLogger = () => {
                   borderRadius: '4px',
                   backgroundColor: 'rgba(76, 175, 80, 0.1)',
                   borderLeft: '3px solid #4caf50',
-                  fontSize: '11px',
+                  fontSize: '8px',
                   color: 'rgba(255, 255, 255, 0.8)',
                 }}
               >
-                <Typography variant="caption" sx={{ fontSize: '10px' }}>
-                  💾 Logs are automatically saved and will persist across page reloads and redirects
-                </Typography>
               </Box>
               
               {logs.map((log) => (

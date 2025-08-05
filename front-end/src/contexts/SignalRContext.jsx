@@ -270,31 +270,33 @@ export const SignalRProvider = ({ children }) => {
     const url = `${import.meta.env.VITE_API_URL}/chat`;
 
     const attemptConnection = () => {
-      console.log(`SignalR connection attempt ${connectionAttempts.current + 1}`);
+      //console.log(`SignalR connection attempt ${connectionAttempts.current + 1}`);
       
-      // Check for stored auth token (primary auth method)
-      const authToken = localStorage.getItem('authToken');
-      const connectionHeaders = {
-        'Content-Type': 'application/json',
+      // Check for stored SignalR JWT token (primary auth method)
+      const signalRToken = localStorage.getItem('signalRToken');
+      
+      let connectionOptions = {
+        withCredentials: true,
+        transport:
+          signalR.HttpTransportType.WebSockets |
+          signalR.HttpTransportType.LongPolling,
+        skipNegotiation: false,
       };
       
-      // Add Authorization header if we have a token
-      if (authToken) {
-        connectionHeaders['Authorization'] = `Bearer ${authToken}`;
-        console.log('🔐 Using token authentication for SignalR connection');
+      // Use accessTokenFactory for JWT token authentication (supports WebSockets)
+      if (signalRToken) {
+        connectionOptions.accessTokenFactory = () => {
+          // Always get the latest token from localStorage
+          const currentToken = localStorage.getItem('signalRToken');
+          return currentToken || '';
+        };
       } else {
-        console.log('🍪 No token found - using cookie authentication for SignalR connection');
+        console.log('🚫 No SignalR JWT token found - cannot connect to SignalR');
+        return; // Don't attempt connection without proper token
       }
       
       const newConnection = new signalR.HubConnectionBuilder()
-        .withUrl(url, {
-          withCredentials: true,
-          transport:
-            signalR.HttpTransportType.WebSockets |
-            signalR.HttpTransportType.LongPolling,
-          skipNegotiation: false,
-          headers: connectionHeaders,
-        })
+        .withUrl(url, connectionOptions)
         .withAutomaticReconnect({
           nextRetryDelayInMilliseconds: (retryContext) => {
             if (retryContext.elapsedTime < 60000) {
@@ -304,7 +306,11 @@ export const SignalRProvider = ({ children }) => {
             }
           },
         })
-        .configureLogging(signalR.LogLevel.Information)
+        .configureLogging(
+          import.meta.env.PROD 
+            ? signalR.LogLevel.Warning  // Production: Only warnings and errors
+            : signalR.LogLevel.Information  // Development: Full logging
+        )
         .build();
 
       setupEventHandlers(newConnection);
@@ -314,43 +320,19 @@ export const SignalRProvider = ({ children }) => {
         .then(() => {
           let transportName = 'Unknown';
           
-          // Better transport detection using multiple methods
-          try {
-            // Method 1: Check transport constructor name
-            if (newConnection.connection?.transport?.constructor?.name) {
-              const constructorName = newConnection.connection.transport.constructor.name;
-              if (constructorName.includes('WebSocket')) {
-                transportName = 'WebSockets';
-              } else if (constructorName.includes('LongPolling')) {
-                transportName = 'Long Polling';
-              } else if (constructorName.includes('ServerSentEvents')) {
-                transportName = 'Server-Sent Events';
-              } else {
-                transportName = constructorName;
-              }
+          if (newConnection.connection?.transport?.constructor?.name) {
+            const constructorName = newConnection.connection.transport.constructor.name;
+            if (constructorName.includes('WebSocket')) {
+              transportName = 'WebSockets';
+            } else if (constructorName.includes('LongPolling')) {
+              transportName = 'Long Polling';
+            } else if (constructorName.includes('ServerSentEvents')) {
+              transportName = 'Server-Sent Events';
+            } else {
+              transportName = constructorName;
             }
-            
-            // Method 2: Check for specific transport objects/properties
-            if (transportName === 'Unknown' && newConnection.connection?.transport) {
-              const transport = newConnection.connection.transport;
-              if (transport._webSocket || transport.webSocket) {
-                transportName = 'WebSockets';
-              } else if (transport._pollXhr || transport._longRunningPoller || transport.xhr) {
-                transportName = 'Long Polling';
-              } else if (transport._eventSource || transport.eventSource) {
-                transportName = 'Server-Sent Events';
-              }
-            }
-            
-            // Method 3: Check transport name property
-            if (transportName === 'Unknown' && newConnection.connection?.transport?.name) {
-              transportName = newConnection.connection.transport.name;
-            }
-          } catch (error) {
-            console.warn('Failed to detect transport type:', error);
           }
-          
-          console.log(`✅ SignalR connection established successfully using ${transportName} transport`);
+          console.debug(`✅ SignalR connection established successfully using ${transportName} transport`);
 
           setConnection(newConnection);
           setIsConnected(true);
@@ -372,12 +354,10 @@ export const SignalRProvider = ({ children }) => {
 
           // If this is the first failure, wait 20 seconds before next attempt
           if (connectionAttempts.current === 1) {
-            console.log('First connection attempt failed, waiting 20 seconds before retry...');
             if (reconnectTimeoutRef.current) {
               clearTimeout(reconnectTimeoutRef.current);
             }
             reconnectTimeoutRef.current = setTimeout(() => {
-              console.log('Retrying SignalR connection after 20 second delay...');
               attemptConnection();
             }, 20000); // 20 seconds delay
           }
@@ -389,8 +369,7 @@ export const SignalRProvider = ({ children }) => {
 
   const reconnect = useCallback(() => {
     if (isConnecting) return; // Already connecting, don't start another
-    
-    console.log('Manual reconnect requested');
+  
     // Force close any existing connection
     closeConnection();
     // Reset connection attempts for manual reconnect

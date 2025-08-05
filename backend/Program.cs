@@ -257,7 +257,7 @@ namespace NotT3ChatBackend
                         new Claim(ClaimTypes.Name, user.UserName ?? user.Email ?? ""),
                         new Claim(ClaimTypes.Email, user.Email ?? "")
                     }),
-                    Expires = DateTime.UtcNow.AddHours(1),
+                    Expires = DateTime.UtcNow.AddDays(1),
                     SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
                 };
 

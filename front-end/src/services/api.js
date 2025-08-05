@@ -24,6 +24,7 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error?.url && error.url!='/manage/info')
     console.error('🚨 API Error:', {
       status: error.response?.status,
       url: error.config?.url,
@@ -33,9 +34,7 @@ api.interceptors.response.use(
       headers: error.response?.headers
     });
     
-    if (error.response?.status === 401) {
-      console.warn('🔒 Unauthorized request detected - redirecting to login');
-      
+    if (error.response?.status === 401) {      
       // Clear invalid token
       if (localStorage.getItem('authToken')) {
         localStorage.removeItem('authToken');

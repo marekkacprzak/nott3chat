@@ -27,11 +27,9 @@ const LoginPage = () => {
       setError('');
       setLoading(true);
 
-      console.log('🔐 Starting login process...');
       const result = await login(username, password);
 
       if (result.success) {
-        console.log('✅ Login successful, navigating to chat...');
         navigate('/chat');
       } else {
         console.error('❌ Login failed:', result.error);

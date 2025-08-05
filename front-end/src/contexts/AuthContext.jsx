@@ -22,22 +22,38 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const fetchSignalRToken = useCallback(async () => {
+    try {
+      const response = await api.post('/signalr-token');
+      if (response.data?.token) {
+        localStorage.setItem('signalRToken', response.data.token);
+        return response.data.token;
+      }
+    } catch (error) {
+      console.error('❌ Failed to get SignalR token:', error);
+    }
+    return null;
+  }, []);
+
   const checkAuth = useCallback(async () => {
     try {
       // Check if we have a stored token (for mobile devices)
       const storedToken = localStorage.getItem('authToken');
       if (storedToken) {
         api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-        console.log('🔧 Using stored token for authentication');
-      } else {
-        console.log('🍪 No stored token - using cookie-based authentication');
       }
       
       await api.get('/manage/info');
       setIsAuthenticated(true);
+      
+      // Get SignalR token if we don't have one
+      if (!localStorage.getItem('signalRToken')) {
+        await fetchSignalRToken();
+      }
+      
       console.log('✅ Authentication check successful');
     } catch (error) {
-      console.warn('⚠️ Authentication check failed:', error?.response?.status);
+      //console.warn('⚠️ Authentication check failed:', error?.response?.status);
       
       // If token auth fails, remove the invalid token
       if (localStorage.getItem('authToken')) {
@@ -46,15 +62,20 @@ export const AuthProvider = ({ children }) => {
         console.log('🗑️ Removed invalid token');
       }
       
-      setIsAuthenticated(false);
+      // Also remove SignalR token if auth fails
+      if (localStorage.getItem('signalRToken')) {
+        localStorage.removeItem('signalRToken');
+        console.log('🗑️ Removed invalid SignalR token');
+      }
+      
+      //setIsAuthenticated(false);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchSignalRToken]);
 
   const login = useCallback(async (email, password) => {
     // Use token-based authentication as primary method (no mobile detection)
-    console.info('� Using token-based authentication as primary method');
     try {
       const tokenResponse = await api.post('/login?useCookies=false', { email, password });
       
@@ -65,8 +86,11 @@ export const AuthProvider = ({ children }) => {
         // Add token to default headers for future requests
         api.defaults.headers.common['Authorization'] = `Bearer ${tokenResponse.data.accessToken}`;
         
+        // Get SignalR JWT token
+        await fetchSignalRToken();
+        
         setIsAuthenticated(true);
-        console.log('✅ Token-based authentication successful');
+
         return { success: true };
       } else {
         console.error('❌ Token response missing accessToken:', tokenResponse.data);
@@ -89,7 +113,7 @@ export const AuthProvider = ({ children }) => {
         error: errorMessage,
       };
     }
-  }, []);
+  }, [fetchSignalRToken]);
 
   const register = useCallback(async (username, email, password) => {
     try {
@@ -122,7 +146,11 @@ export const AuthProvider = ({ children }) => {
       if (localStorage.getItem('authToken')) {
         localStorage.removeItem('authToken');
         delete api.defaults.headers.common['Authorization'];
-        console.log('🗑️ Cleared stored auth token');
+      }
+      
+      // Remove SignalR token if it exists
+      if (localStorage.getItem('signalRToken')) {
+        localStorage.removeItem('signalRToken');
       }
     }
   }, []);
