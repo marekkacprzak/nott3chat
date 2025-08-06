@@ -552,7 +552,7 @@ namespace NotT3ChatBackend.Services {
                 // Handle Perplexity model differently
                 if (model.Equals("perplexity", StringComparison.OrdinalIgnoreCase))
                 {
-                    await InitiatePerplexityConversationAsync(model, messages, onContentReceived, onComplete);
+                    await InitiatePerplexityStreamConversationAsync(model, messages, onContentReceived, onComplete);
                 }
                 else if (_useOpenAi) {
                     await InitiateOpenAIConversationAsync(model, messages, onContentReceived, onComplete);
@@ -671,21 +671,109 @@ namespace NotT3ChatBackend.Services {
             }
         }
 
-        private async Task InitiateAzureConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
-            if (_azureClient == null) {
+        private async Task InitiatePerplexityStreamConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
+            // Always use sonar-reasoning model for Perplexity API regardless of input model name
+            var requestBody = new {
+                model = "sonar-reasoning",
+                messages = messages.Select(m => new { role = m.Role.ToLower(), content = m.Content }).ToArray(),
+                stream = true
+            };
+
+            var options = new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower
+            };
+            var json = System.Text.Json.JsonSerializer.Serialize(requestBody, options);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.perplexity.ai/chat/completions")
+            {
+                Content = content
+            };
+            var apiKey = _configuration["Perplexity:ApiKey"];
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                _logger.LogWarning("Perplexity API key not found. Returning a mock response.");
+                await onContentReceived("Perplexity API key is not configured. Please add it to your settings to use this model.");
+                await onComplete(null);
+                return;
+            }
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+            try
+            {
+                var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
+
+                using var stream = await response.Content.ReadAsStreamAsync();
+                using var reader = new StreamReader(stream);
+
+                while (!reader.EndOfStream)
+                {
+                    var line = await reader.ReadLineAsync();
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+
+                    if (line.StartsWith("data: "))
+                    {
+                        var data = line.Substring(6);
+                        if (data == "[DONE]")
+                        {
+                            break;
+                        }
+
+                        try
+                        {
+                            using var jsonDoc = System.Text.Json.JsonDocument.Parse(data);
+                            var choices = jsonDoc.RootElement.GetProperty("choices");
+                            if (choices.GetArrayLength() > 0)
+                            {
+                                var delta = choices[0].GetProperty("delta");
+                                if (delta.TryGetProperty("content", out var contentElement))
+                                {
+                                    var contentText = contentElement.GetString();
+                                    if (!string.IsNullOrEmpty(contentText))
+                                    {
+                                        await onContentReceived(contentText);
+                                    }
+                                }
+                            }
+                        }
+                        catch (System.Text.Json.JsonException ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to parse Perplexity stream data: {Data}", data);
+                        }
+                    }
+                }
+                await onComplete(null);
+                _logger.LogDebug("Perplexity conversation streaming completed.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during Perplexity conversation streaming.");
+                await onComplete(ex);
+            }
+        }
+
+        private async Task InitiateAzureConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete)
+        {
+            if (_azureClient == null)
+            {
                 throw new InvalidOperationException("Azure OpenAI client is not initialized");
             }
 
             var chatClient = _azureClient.GetChatClient(model);
             var chatMessages = messages.Select(m => CreateAzureChatMessage(m.Role, m.Content)).ToList();
-            
+
             var response = chatClient.CompleteChatStreamingAsync(chatMessages);
             var contentBuilder = new StringBuilder();
 
-            await foreach (var update in response) {
-                if (update.ContentUpdate.Count > 0) {
+            await foreach (var update in response)
+            {
+                if (update.ContentUpdate.Count > 0)
+                {
                     var content = string.Join("", update.ContentUpdate.Select(c => c.Text ?? ""));
-                    if (!string.IsNullOrEmpty(content)) {
+                    if (!string.IsNullOrEmpty(content))
+                    {
                         contentBuilder.Append(content);
                         await onContentReceived(content);
                     }
