@@ -1,9 +1,14 @@
 ﻿# NotT3Chat: The C# Answer to the T3 Stack
-
  <img src="stuff/logo.png" width="350" />
 
 
 Welcome to **NotT3Chat**, a fully-featured, real-time chat application built for the [cloneathon.t3.chat](https://cloneathon.t3.chat). This project serves as a testament to the raw power and elegance of C# and ASP.NET Core, proving that you don't need TypeScript to build amazing, modern web applications. (Sorry, Theo.)
+
+*   **📱 Mobile-Optimized Experience:** The entire application is optimized for mobile devices. Features include:
+  * Prevents unwanted page scrolling and zooming on input focus
+  * Input area automatically adjusts position when the mobile keyboard is shown
+  * Responsive layout and touch-friendly controls
+  * Mobile console logger for debugging on iPhone and other devices
 
 > **🔥 NEW: Now powered by Azure OpenAI with credential-based authentication!**  
 > See [Azure OpenAI Setup Guide](AZURE_SETUP.md) for configuration details.
@@ -94,7 +99,15 @@ The backend now uses Azure OpenAI with credential-based authentication. See the 
     "TitleModel": "gpt-4o-mini"
   },
   "Perplexity": {
-    "ApiKey": "your-perplexity-api-key-here"
+    "ApiKey": "your-perplexity-api-key-here" // Required for both search and streaming capabilities
+  },
+  "AllowedHosts": "*",
+  "Kestrel": {
+    "Endpoints": {
+      "MyHttpEndpoint": {
+        "Url": "http://0.0.0.0:80"
+      }
+    }
   }
 }
 ```
@@ -156,7 +169,7 @@ Here's a non-exhaustive list of what's planned when I get around to it:
 - [x] Better syntax highlighting for code blocks
 - [ ] Even better syntax highlighting, with copy buttons
 - [x] Branching conversations
-- [x] Tools (Perplexity web search integration)
+- [x] Tools (Perplexity web search integration with streaming)
 - [ ] Image generation
 - [ ] Chat sharing via public links
 - [ ] Bring Your Own Key (BYOK) for API providers

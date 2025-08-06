@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - 2025-08
 
 ### Added
-- **🔍 Perplexity AI Integration**: Added comprehensive search capabilities
+- **🔍 Perplexity AI Integration**: Added comprehensive search capabilities with streaming support
+  - Stream-based integration for real-time search results
+  - Support for both regular and streaming API modes
+  - Proper SSE (Server-Sent Events) handling
   - Integrated Perplexity API for web search and research
   - Support for search recency filters and comprehensive search mode
   - Real-time streaming of search results with sources
