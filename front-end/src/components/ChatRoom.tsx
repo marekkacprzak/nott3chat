@@ -190,17 +190,30 @@ const ChatRoom = () => {
     <div className="chat-room">
       <Box className="chat-container">
         <AppBar position="static">
-          <Toolbar>
-            <Typography variant="h6" component="div" className="app-bar-title">
+          <Toolbar sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {/* Left side - Chat Title */}
+            <Typography 
+              variant="h6" 
+              component="div" 
+              className="app-bar-title"
+              sx={{
+                maxWidth: '40%', // 1/5 of the toolbar width
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flex: '0 0 auto' // Don't grow or shrink
+              }}
+              title={chatId && activeChat ? activeChat.title : 'New Chat'} // Show full title on hover
+            >
               {chatId && activeChat ? activeChat.title : 'New Chat'}
             </Typography>
             
-            {/* Theme Selector */}
-            <Box sx={{ mr: 2 }}>
+            {/* Right side - Controls */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              {/* Theme Selector */}
               <ThemeSelector variant="chip" size="small" />
-            </Box>
-            
-            <Chip
+              
+              <Chip
               label={
                 isConnecting 
                   ? 'Connecting...' 
@@ -225,7 +238,6 @@ const ChatRoom = () => {
                 startIcon={<RefreshIcon />}
                 size="small"
                 variant="outlined"
-                sx={{ ml: 1 }}
               >
                 Reconnect
               </Button>
@@ -237,6 +249,7 @@ const ChatRoom = () => {
             >
               Logout
             </Button>
+            </Box>
           </Toolbar>
         </AppBar>
 
