@@ -55,7 +55,7 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({ variant = 'standard', siz
             renderValue={() => (
               <Chip
                 icon={<PaletteIcon />}
-                label={currentTheme}
+                label={currentTheme.split(' ')[0]}
                 size="small"
                 sx={{
                   backgroundColor: currentConfig.primaryColor,
@@ -114,6 +114,12 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({ variant = 'standard', siz
             alignItems: 'center',
           },
         }}
+        renderValue={(selected) => (
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            {getThemeIcon(selected)}
+            <Typography variant="body2">{selected.split(' ')[0]}</Typography>
+          </Box>
+        )}
       >
         {availableThemes.map((themeName) => (
           <MenuItem key={themeName} value={themeName}>

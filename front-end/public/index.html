@@ -3,7 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/chat-icon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- Mobile app-like behavior -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="NotT3.Chat" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#1976d2" />
+    <!-- Prevent tap highlight on mobile -->
+    <style>
+      * {
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+      }
+      
+      /* Allow tap highlight only for interactive elements */
+      button, a, input, textarea {
+        -webkit-tap-highlight-color: rgba(25, 118, 210, 0.1);
+      }
+    </style>
     <title>Not T3.Chat</title>
   </head>
   <body>

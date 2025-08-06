@@ -9,7 +9,9 @@ import {
   Typography,
   AppBar,
   Toolbar,
-  Chip,
+  Tooltip,
+  IconButton,
+  CircularProgress,
   useTheme,
   useMediaQuery,
 } from '@mui/material';
@@ -17,6 +19,8 @@ import {
   Send as SendIcon,
   ExitToApp as LogoutIcon,
   Refresh as RefreshIcon,
+  Wifi as WifiIcon,
+  WifiOff as WifiOffIcon,
 } from '@mui/icons-material';
 import { useSignalR } from '../contexts/SignalRContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -26,6 +30,9 @@ import ChatMessage from './ChatMessage';
 import ChatSidebar from './ChatSidebar';
 import ModelSelector from './ModelSelector';
 import ThemeSelector from './ThemeSelector';
+import { useMobileKeyboard } from '../hooks/useMobileKeyboard';
+import { useKeyboardPosition } from '../hooks/useKeyboardPosition';
+import { usePreventZoom } from '../hooks/usePreventZoom';
 import './ChatRoom.css';
 
 const ChatRoom = () => {
@@ -40,6 +47,17 @@ const ChatRoom = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isNarrowDesktop = useMediaQuery('(max-width: 1200px)');
+  
+  // Mobile keyboard detection and positioning
+  const { isKeyboardOpen, viewportHeight, isMobile } = useMobileKeyboard();
+  const { 
+    inputPosition, 
+    handleInputFocus, 
+    handleInputBlur 
+  } = useKeyboardPosition();
+  
+  // Prevent zoom on mobile input focus
+  const { getInputProps } = usePreventZoom();
 
   // Always use permanent sidebar, but start collapsed on narrow screens
   const shouldStartCollapsed = isNarrowDesktop;
@@ -79,6 +97,25 @@ const ChatRoom = () => {
   useEffect(() => {
     if (hasLoaded && !activeChat) navigate('/chat');
   }, [hasLoaded, activeChat, navigate]);
+
+  // Handle mobile keyboard opening - ensure input stays visible
+  useEffect(() => {
+    if (isMobile && isKeyboardOpen) {
+      // Small delay to ensure keyboard is fully open
+      const timer = setTimeout(() => {
+        const inputArea = document.querySelector('.chat-room .input-area') as HTMLElement;
+        if (inputArea) {
+          inputArea.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'end',
+            inline: 'nearest' 
+          });
+        }
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isMobile, isKeyboardOpen]);
 
   // Update selected model to match the last message's model
   useEffect(() => {
@@ -188,7 +225,17 @@ const ChatRoom = () => {
 
   return (
     <div className="chat-room">
-      <Box className="chat-container">
+      <Box 
+        className="chat-container"
+        sx={{
+          height: isMobile && isKeyboardOpen 
+            ? `${viewportHeight}px` 
+            : '100vh',
+          overflow: 'hidden',
+          position: 'relative',
+          transition: isMobile ? 'height 0.2s ease-in-out' : 'none',
+        }}
+      >
         <AppBar position="static">
           <Toolbar sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             {/* Left side - Chat Title */}
@@ -209,46 +256,43 @@ const ChatRoom = () => {
             </Typography>
             
             {/* Right side - Controls */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0 }}>
               {/* Theme Selector */}
               <ThemeSelector variant="chip" size="small" />
               
-              <Chip
-              label={
-                isConnecting 
-                  ? 'Connecting...' 
-                  : isConnected 
-                    ? 'Connected' 
-                    : 'Disconnected'
-              }
-              color={
-                isConnecting 
-                  ? 'warning' 
-                  : isConnected 
-                    ? 'success' 
-                    : 'error'
-              }
-              variant="outlined"
-              className="connection-chip"
-            />
+              {isConnecting ? (
+                <Tooltip title="Connecting...">
+                  <CircularProgress size={24} color="inherit" />
+                </Tooltip>
+              ) : isConnected ? (
+                <Tooltip title="Connected">
+                  <WifiIcon color="success" />
+                </Tooltip>
+              ) : (
+                <Tooltip title="Disconnected">
+                  <WifiOffIcon color="error" />
+                </Tooltip>
+              )}
+
             {!isConnected && !isConnecting && (
-              <Button
-                color="inherit"
-                onClick={reconnect}
-                startIcon={<RefreshIcon />}
-                size="small"
-                variant="outlined"
-              >
-                Reconnect
-              </Button>
+              <Tooltip title="Reconnect">
+                <IconButton
+                  color="inherit"
+                  onClick={reconnect}
+                  size="small"
+                >
+                  <RefreshIcon />
+                </IconButton>
+              </Tooltip>
             )}
-            <Button
-              color="inherit"
-              onClick={handleLogout}
-              startIcon={<LogoutIcon />}
-            >
-              Logout
-            </Button>
+            <Tooltip title="Logout">
+              <IconButton
+                color="inherit"
+                onClick={handleLogout}
+              >
+                <LogoutIcon />
+              </IconButton>
+            </Tooltip>
             </Box>
           </Toolbar>
         </AppBar>
@@ -257,9 +301,13 @@ const ChatRoom = () => {
           className="main-layout" 
           sx={{ 
             display: 'flex',
-            height: 'calc(100vh - 64px)', // Full height minus AppBar
+            height: isMobile && isKeyboardOpen 
+              ? `${viewportHeight - 64}px` // Adjust for keyboard on mobile
+              : 'calc(100vh - 64px)', // Full height minus AppBar
             marginTop: 0,
             paddingTop: 0,
+            overflow: 'hidden',
+            transition: isMobile ? 'height 0.2s ease-in-out' : 'none',
           }}
         >
           {/* Chat Sidebar */}
@@ -288,7 +336,18 @@ const ChatRoom = () => {
                 padding: '16px',
               }}
             >
-            <Paper elevation={3} className="chat-paper">
+            <Paper 
+              elevation={3} 
+              className="chat-paper"
+              sx={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: isMobile && inputPosition === 'top' ? 'column-reverse' : 'column',
+                overflow: 'hidden',
+                height: '100%',
+                transition: isMobile ? 'flex-direction 0.3s ease-in-out' : 'none',
+              }}
+            >
               {/* Messages Area */}
               <Box 
                 className="messages-area"
@@ -469,11 +528,28 @@ const ChatRoom = () => {
                         handleSendMessage(e);
                       }
                     }}
+                    onFocus={(e) => {
+                      if (isMobile) {
+                        handleInputFocus();
+                      }
+                      
+                      // On mobile, scroll input into view when focused
+                      if (isMobile) {
+                        setTimeout(() => {
+                          e.target.scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'center' 
+                          });
+                        }, 300); // Wait for keyboard animation
+                      }
+                    }}
+                    onBlur={isMobile ? handleInputBlur : undefined}
                     slotProps={{
                       input: {
+                        ...getInputProps(),
                         style: { 
                           height: '100%',
-                          alignItems: 'stretch'
+                          alignItems: 'stretch',
                         }
                       }
                     }}
