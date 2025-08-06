@@ -195,18 +195,18 @@ namespace NotT3ChatBackend
                 var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
                 context.Database.EnsureCreated();
 #if DEBUG
-                logger.LogInformation("Creating debug admin user");
+                logger.LogTrace("Creating debug admin user");
                 var adminUser = new NotT3User { UserName = "admin@example.com", Email = "admin@example.com" };
                 var result = userManager.CreateAsync(adminUser, "admin").Result;
                 if (result.Succeeded)
-                    logger.LogInformation("Admin user created successfully");
+                    logger.LogTrace("Admin user created successfully");
                 else
                     logger.LogWarning("Failed to create admin user: {Errors}", string.Join(", ", result.Errors.Select(e => e.Description)));
 #endif
             }
 
             var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
-            appLogger.LogInformation("Configuring HTTP pipeline");
+            appLogger.LogTrace("Configuring HTTP pipeline");
             app.UseCors("OpenCorsPolicy");
             
             // Add CORS logging middleware
@@ -216,7 +216,7 @@ namespace NotT3ChatBackend
                 var origin = context.Request.Headers.Origin.FirstOrDefault();
                 if (!string.IsNullOrEmpty(origin))
                 {
-                    corsLogger.LogInformation("CORS request from origin: {Origin}", origin);
+                    corsLogger.LogTrace("CORS request from origin: {Origin}", origin);
                 }
                 await next();
             });
@@ -225,7 +225,7 @@ namespace NotT3ChatBackend
             app.UseAuthentication();
             app.UseAuthorization();
 
-            appLogger.LogInformation("Mapping endpoints");
+            appLogger.LogTrace("Mapping endpoints");
             app.MapGet("/health", (ILogger<Program> logger) =>
             {
                 var testFileContent = DateTime.UtcNow.ToString("o");
