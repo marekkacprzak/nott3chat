@@ -38,6 +38,7 @@ This feature redirects all console output to a visible overlay at the bottom of 
 2. The console logger will appear at the bottom
 3. Click the expand/collapse button to show/hide logs
 4. Use the "Clear" button to remove all logs
+5. **For detailed logging**: Navigate to `/logging` page for comprehensive log viewing
 
 ### On iPhone
 1. Open the application in Safari on your iPhone
@@ -45,6 +46,17 @@ This feature redirects all console output to a visible overlay at the bottom of 
 3. Tap the console bar at the bottom to expand the log view
 4. Scroll through logs with native iOS momentum scrolling
 5. Tap again to collapse
+6. **For detailed logging**: Navigate to `/logging` page in your mobile browser for full log interface
+
+### Advanced Logging Access
+For more comprehensive logging and debugging:
+- **Visit `/logging` page** in your browser (desktop or mobile)
+- This dedicated logging page provides:
+  - Full-screen log viewing
+  - Enhanced filtering and search capabilities
+  - Better readability for complex debugging
+  - Extended log history
+  - Export/download options for logs
 
 ## Console Methods Supported
 
