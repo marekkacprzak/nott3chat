@@ -2,7 +2,7 @@
 # Edit at https://www.toptal.com/developers/gitignore?templates=node,visualstudio
 
 #### DB ####
-database.dat
+database.dat*
 .idea/
 
 ### Node ###
@@ -551,3 +551,4 @@ backend/databse.dat
 backend/databse.dat-shm
 backend/databse.dat-wal
 front-end/pnpm-lock.yaml
+pnpm-lock.yaml
