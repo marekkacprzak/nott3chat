@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
-import PropTypes from 'prop-types';
+import React, { useCallback, useEffect, useState } from 'react';
+
 import lcn from 'light-classnames';
 import {
   Drawer,
-  SwipeableDrawer,
   List,
   ListItem,
   ListItemButton,
@@ -20,7 +19,6 @@ import {
   Add as AddIcon,
   Chat as ChatIcon,
   Delete as DeleteIcon,
-  Close as CloseIcon,
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { useChats } from '../contexts/ChatContext';
@@ -31,7 +29,14 @@ const DRAWER_WIDTH = 200;
 const COLLAPSED_WIDTH = 36;
 const MIN_WIDTH = 120; // Minimum width before collapsing
 
-const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStartCollapsed }) => {
+interface ChatSidebarProps {
+  onChatSelect: (chatId: string | null) => void;
+  currentChatId?: string;
+  onSidebarResize?: (width: number) => void;
+  shouldStartCollapsed?: boolean;
+}
+
+const ChatSidebar: React.FC<ChatSidebarProps> = ({ onChatSelect, currentChatId, onSidebarResize, shouldStartCollapsed }) => {
   const { chats, loading, error, hasLoaded, loadChats, deleteChat } = useChats();
   const [sidebarWidth, setSidebarWidth] = useState(DRAWER_WIDTH);
   const [isCollapsed, setIsCollapsed] = useState(shouldStartCollapsed);
@@ -67,14 +72,14 @@ const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStart
   }, [onChatSelect]);
 
   const handleChatClick = useCallback(
-    (chatId) => {
+    (chatId: string) => {
       onChatSelect(chatId);
     },
     [onChatSelect]
   );
 
   const handleDeleteChat = useCallback(
-    async (event, chatId) => {
+    async (event: React.MouseEvent, chatId: string) => {
       event.stopPropagation(); // Prevent triggering chat selection
       const success = await deleteChat(chatId);
       if (success && currentChatId === chatId) {
@@ -86,7 +91,7 @@ const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStart
   );
 
   // Handle resize functionality for both mouse and touch
-  const handleResizeStart = useCallback((event) => {
+  const handleResizeStart = useCallback((event: any) => {
     event.preventDefault();
     
     // Determine if it's a touch or mouse event
@@ -103,14 +108,14 @@ const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStart
     let initialTouchX = startX;
     let hasMovedSignificantly = false;
 
-    const handleMove = (moveEvent) => {
+    const handleMove = (moveEvent: any) => {
       // Prevent default to avoid scrolling
-      if (isTouchEvent) {
+      if ('touches' in moveEvent) {
         moveEvent.preventDefault();
       }
       
       // Get the correct clientX for both touch and mouse events
-      const currentX = moveEvent.touches ? moveEvent.touches[0].clientX : moveEvent.clientX;
+      const currentX = 'touches' in moveEvent ? moveEvent.touches[0].clientX : moveEvent.clientX;
       const deltaX = currentX - startX;
       
       // For touch events, check if we've moved significantly
@@ -468,11 +473,6 @@ const ChatSidebar = ({ onChatSelect, currentChatId, onSidebarResize, shouldStart
   );
 };
 
-ChatSidebar.propTypes = {
-  onChatSelect: PropTypes.func.isRequired,
-  currentChatId: PropTypes.string,
-  onSidebarResize: PropTypes.func,
-  shouldStartCollapsed: PropTypes.bool,
-};
+
 
 export default ChatSidebar;

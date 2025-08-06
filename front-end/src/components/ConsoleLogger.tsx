@@ -16,13 +16,20 @@ import {
 } from '@mui/icons-material';
 import './ConsoleLogger.css';
 
+interface LogEntry {
+  id: number;
+  type: string;
+  timestamp: string;
+  args: string[];
+}
+
 const ConsoleLogger = () => {
-  const [logs, setLogs] = useState([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [logCount, setLogCount] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
-  const logsEndRef = useRef(null);
-  const originalConsole = useRef({});
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  const originalConsole = useRef<any>({});
 
   // Storage keys for persistence
   const STORAGE_KEYS = {
@@ -76,7 +83,7 @@ const ConsoleLogger = () => {
   // Detect mobile devices
   useEffect(() => {
     const checkMobile = () => {
-      const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+      const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
       const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
       const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
       const isSmallScreen = window.innerWidth <= 768;
@@ -109,8 +116,8 @@ const ConsoleLogger = () => {
       assert: console.assert,
     };
 
-    const createLogInterceptor = (type, originalMethod) => {
-      return (...args) => {
+    const createLogInterceptor = (type: string, originalMethod: any) => {
+      return (...args: any[]) => {
         // Call original method
         originalMethod.apply(console, args);
         
@@ -207,7 +214,7 @@ const ConsoleLogger = () => {
     }
   };
 
-  const getLogColor = (type) => {
+  const getLogColor = (type: string) => {
     switch (type) {
       case 'error':
         return '#f44336';
@@ -222,7 +229,7 @@ const ConsoleLogger = () => {
     }
   };
 
-  const getLogIcon = (type) => {
+  const getLogIcon = (type: string) => {
     switch (type) {
       case 'error':
         return '❌';
@@ -426,7 +433,7 @@ const ConsoleLogger = () => {
                     </Typography>
                   </Box>
                   <Box>
-                    {log.args.map((arg, index) => (
+                    {log.args.map((arg: any, index: number) => (
                       <Typography
                         key={index}
                         component="div"

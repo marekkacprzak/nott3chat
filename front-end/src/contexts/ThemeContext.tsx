@@ -1,9 +1,30 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { createTheme } from '@mui/material/styles';
+import { createTheme, Theme } from '@mui/material/styles';
 
-const ThemeContext = createContext();
+interface ThemeConfig {
+  mode: 'light' | 'dark';
+  primaryColor: string;
+  secondaryColor: string;
+  backgroundColor: string;
+  paperColor: string;
+}
 
-export const useThemeMode = () => {
+interface ThemeContextType {
+  theme: Theme;
+  currentTheme: string;
+  changeTheme: (themeVariant: string) => void;
+  getAvailableThemes: () => string[];
+  getCurrentThemeConfig: () => ThemeConfig;
+  themeVariants: Record<string, ThemeConfig>;
+}
+
+interface ThemeModeProviderProps {
+  children: React.ReactNode;
+}
+
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+
+export const useThemeMode = (): ThemeContextType => {
   const context = useContext(ThemeContext);
   if (!context) {
     throw new Error('useThemeMode must be used within a ThemeProvider');
@@ -12,86 +33,86 @@ export const useThemeMode = () => {
 };
 
 // Define multiple theme variants
-const themeVariants = {
+const themeVariants: Record<string, ThemeConfig> = {
   'Default Light': {
-    mode: 'light',
+    mode: 'light' as const,
     primaryColor: '#2563eb',
     secondaryColor: '#7c3aed',
     backgroundColor: '#f8fafc',
     paperColor: '#ffffff',
   },
   'Default Dark': {
-    mode: 'dark',
+    mode: 'dark' as const,
     primaryColor: '#3b82f6',
     secondaryColor: '#8b5cf6',
     backgroundColor: '#0f172a',
     paperColor: '#1e293b',
   },
   'Ocean Light': {
-    mode: 'light',
+    mode: 'light' as const,
     primaryColor: '#0ea5e9',
     secondaryColor: '#06b6d4',
     backgroundColor: '#f0f9ff',
     paperColor: '#ffffff',
   },
   'Ocean Dark': {
-    mode: 'dark',
+    mode: 'dark' as const,
     primaryColor: '#0ea5e9',
     secondaryColor: '#06b6d4',
     backgroundColor: '#0c4a6e',
     paperColor: '#0f172a',
   },
   'Forest Light': {
-    mode: 'light',
+    mode: 'light' as const,
     primaryColor: '#059669',
     secondaryColor: '#10b981',
     backgroundColor: '#f0fdf4',
     paperColor: '#ffffff',
   },
   'Forest Dark': {
-    mode: 'dark',
+    mode: 'dark' as const,
     primaryColor: '#10b981',
     secondaryColor: '#34d399',
     backgroundColor: '#064e3b',
     paperColor: '#1f2937',
   },
   'Sunset Light': {
-    mode: 'light',
+    mode: 'light' as const,
     primaryColor: '#ea580c',
     secondaryColor: '#f97316',
     backgroundColor: '#fff7ed',
     paperColor: '#ffffff',
   },
   'Sunset Dark': {
-    mode: 'dark',
+    mode: 'dark' as const,
     primaryColor: '#f97316',
     secondaryColor: '#fb923c',
     backgroundColor: '#7c2d12',
     paperColor: '#1f2937',
   },
   'Purple Light': {
-    mode: 'light',
+    mode: 'light' as const,
     primaryColor: '#7c3aed',
     secondaryColor: '#8b5cf6',
     backgroundColor: '#faf5ff',
     paperColor: '#ffffff',
   },
   'Purple Dark': {
-    mode: 'dark',
+    mode: 'dark' as const,
     primaryColor: '#8b5cf6',
     secondaryColor: '#a78bfa',
     backgroundColor: '#581c87',
     paperColor: '#1f2937',
   },
   'Monochrome Light': {
-    mode: 'light',
+    mode: 'light' as const,
     primaryColor: '#374151',
     secondaryColor: '#6b7280',
     backgroundColor: '#f9fafb',
     paperColor: '#ffffff',
   },
   'Monochrome Dark': {
-    mode: 'dark',
+    mode: 'dark' as const,
     primaryColor: '#9ca3af',
     secondaryColor: '#d1d5db',
     backgroundColor: '#111827',
@@ -99,7 +120,7 @@ const themeVariants = {
   },
 };
 
-const createCustomTheme = (variant) => {
+const createCustomTheme = (variant: string): Theme => {
   const config = themeVariants[variant];
   
   return createTheme({
@@ -261,14 +282,14 @@ const createCustomTheme = (variant) => {
   });
 };
 
-export const ThemeModeProvider = ({ children }) => {
-  const [currentTheme, setCurrentTheme] = useState(() => {
+export const ThemeModeProvider: React.FC<ThemeModeProviderProps> = ({ children }) => {
+  const [currentTheme, setCurrentTheme] = useState<string>(() => {
     // Get theme from localStorage or default to 'Default Light'
     const savedTheme = localStorage.getItem('themeVariant');
-    return savedTheme && themeVariants[savedTheme] ? savedTheme : 'Default Light';
+    return savedTheme && savedTheme in themeVariants ? savedTheme : 'Default Light';
   });
 
-  const [theme, setTheme] = useState(() => createCustomTheme(currentTheme));
+  const [theme, setTheme] = useState<Theme>(() => createCustomTheme(currentTheme));
 
   useEffect(() => {
     // Save theme preference to localStorage
@@ -276,17 +297,17 @@ export const ThemeModeProvider = ({ children }) => {
     setTheme(createCustomTheme(currentTheme));
   }, [currentTheme]);
 
-  const changeTheme = (themeVariant) => {
-    if (themeVariants[themeVariant]) {
+  const changeTheme = (themeVariant: string): void => {
+    if (themeVariant in themeVariants) {
       setCurrentTheme(themeVariant);
     }
   };
 
-  const getAvailableThemes = () => {
+  const getAvailableThemes = (): string[] => {
     return Object.keys(themeVariants);
   };
 
-  const getCurrentThemeConfig = () => {
+  const getCurrentThemeConfig = (): ThemeConfig => {
     return themeVariants[currentTheme];
   };
 

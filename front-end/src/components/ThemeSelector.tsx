@@ -15,16 +15,22 @@ import {
 } from '@mui/icons-material';
 import { useThemeMode } from '../contexts/ThemeContext';
 
-const ThemeSelector = ({ variant = 'standard', size = 'small' }) => {
+interface ThemeSelectorProps {
+  variant?: 'chip' | 'outlined' | 'filled' | 'standard';
+  size?: 'small' | 'medium';
+  showLabel?: boolean;
+}
+
+const ThemeSelector: React.FC<ThemeSelectorProps> = ({ variant = 'standard', size = 'small' }) => {
   const { currentTheme, changeTheme, getAvailableThemes, getCurrentThemeConfig } = useThemeMode();
   const availableThemes = getAvailableThemes();
   const currentConfig = getCurrentThemeConfig();
 
-  const handleThemeChange = (event) => {
+  const handleThemeChange = (event: any) => {
     changeTheme(event.target.value);
   };
 
-  const getThemeIcon = (themeName) => {
+  const getThemeIcon = (themeName: string) => {
     const config = useThemeMode().themeVariants[themeName];
     return config.mode === 'dark' ? (
       <DarkModeIcon sx={{ fontSize: 16, mr: 1 }} />
@@ -33,7 +39,7 @@ const ThemeSelector = ({ variant = 'standard', size = 'small' }) => {
     );
   };
 
-  const getThemeColor = (themeName) => {
+  const getThemeColor = (themeName: string) => {
     const config = useThemeMode().themeVariants[themeName];
     return config.primaryColor;
   };

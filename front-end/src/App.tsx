@@ -22,11 +22,11 @@ import { setNavigate } from './services/navigationService';
 import ConsoleLogger from './components/ConsoleLogger';
 import ConsoleLoggerErrorBoundary from './components/ConsoleLoggerErrorBoundary';
 
-const AppRoutes = () => {
+const AppRoutes: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [showLogger, setShowLogger] = React.useState(false);
+  const [showLogger, setShowLogger] = React.useState<boolean>(false);
   
   // Initialize navigation service with React Router's navigate function
   React.useEffect(() => {
@@ -104,7 +104,7 @@ const AppRoutes = () => {
   );
 };
 
-const ThemedApp = () => {
+const ThemedApp: React.FC = () => {
   const { theme } = useThemeMode();
   
   return (
@@ -119,7 +119,7 @@ const ThemedApp = () => {
   );
 };
 
-const App = () => {
+const App: React.FC = () => {
   return (
     <ThemeModeProvider>
       <ThemedApp />

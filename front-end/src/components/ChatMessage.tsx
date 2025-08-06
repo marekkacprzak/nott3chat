@@ -1,5 +1,5 @@
-import PropTypes from 'prop-types';
-import { useCallback, useMemo, useState } from 'react';
+
+import React, { useCallback, useMemo, useState } from 'react';
 import lcn from 'light-classnames';
 import { 
   Box, 
@@ -35,14 +35,28 @@ import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useModels } from '../contexts/ModelsContext';
 import './ChatMessage.css';
 
-const formatTime = (timestamp) => {
+interface ChatMessageProps {
+  message: any; // TODO: Define proper message type
+  selectedModel: string;
+  onSetSelectedModel: (model: string) => void;
+  onRegenerateMessage: (model: string, messageId: string) => Promise<void>;
+  onForkChat: (messageId: string) => Promise<void>;
+  isLastMessage: boolean;
+}
+
+interface PendingRegenerate {
+  model: string;
+  messageId: string;
+}
+
+const formatTime = (timestamp: string): string => {
   return new Date(timestamp).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
   });
 };
 
-const ChatMessage = ({ 
+const ChatMessage: React.FC<ChatMessageProps> = ({ 
   message, 
   selectedModel, 
   onSetSelectedModel, 
@@ -52,9 +66,9 @@ const ChatMessage = ({
 }) => {
   const { models } = useModels();
   const theme = useTheme();
-  const [regenerateMenuAnchor, setRegenerateMenuAnchor] = useState(null);
+  const [regenerateMenuAnchor, setRegenerateMenuAnchor] = useState<HTMLElement | null>(null);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
-  const [pendingRegenerate, setPendingRegenerate] = useState(null);
+  const [pendingRegenerate, setPendingRegenerate] = useState<PendingRegenerate | null>(null);
   const isUser = useMemo(() => message.type === 'user', [message]);
   const isAssistant = useMemo(() => message.type === 'assistant', [message]);
   
@@ -66,12 +80,12 @@ const ChatMessage = ({
     onForkChat(message.id);
   }, [onForkChat, message]);
 
-  const handleRegenerateDropdownClick = useCallback((event) => {
+  const handleRegenerateDropdownClick = useCallback((event: React.MouseEvent<HTMLElement>) => {
     event.stopPropagation();
     setRegenerateMenuAnchor(event.currentTarget);
   }, []);
 
-  const handleRegenerate = useCallback((modelName, messageId) => {
+  const handleRegenerate = useCallback((modelName: string, messageId: string) => {
     if (isLastMessage) {
       // If this is the last message, regenerate directly
       onRegenerateMessage(modelName, messageId);
@@ -89,7 +103,7 @@ const ChatMessage = ({
     handleRegenerate(modelToUse, message.id);
   }, [message.chatModel, selectedModel, handleRegenerate, message.id]);
 
-  const handleRegenerateWithModel = useCallback((modelName) => {
+  const handleRegenerateWithModel = useCallback((modelName: string) => {
     onSetSelectedModel(modelName);
     setRegenerateMenuAnchor(null);
     
@@ -180,12 +194,12 @@ const ChatMessage = ({
                   remarkPlugins={[remarkGfm]}
                   rehypePlugins={[rehypeHighlight]}
                   components={{
-                    code: ({ inline, className, children, ...props }) => {
+                    code: ({ className, children, ...props }: any) => {
                       const match = /language-(\w+)/.exec(className || '');
                       const language = match ? match[1] : '';
                       
                       // Properly extract text content from children
-                      const getTextContent = (node) => {
+                      const getTextContent = (node: any): string => {
                         if (typeof node === 'string') return node;
                         if (Array.isArray(node)) return node.map(getTextContent).join('');
                         if (node && node.props && node.props.children) return getTextContent(node.props.children);
@@ -194,7 +208,7 @@ const ChatMessage = ({
                       
                       const codeString = getTextContent(children).replace(/\n$/, '');
                       
-                      return !inline && language ? (
+                      return language ? (
                         <div className="markdown-code-block">
                           <SyntaxHighlighter
                             style={theme.palette.mode === 'dark' ? vscDarkPlus : vs}
@@ -353,23 +367,6 @@ const ChatMessage = ({
       </Dialog>
     </div>
   );
-};
-
-ChatMessage.propTypes = {
-  message: PropTypes.shape({
-    id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
-    type: PropTypes.oneOf(['user', 'assistant']).isRequired,
-    content: PropTypes.string.isRequired,
-    timestamp: PropTypes.instanceOf(Date).isRequired,
-    isComplete: PropTypes.bool.isRequired,
-    chatModel: PropTypes.string,
-    finishError: PropTypes.string,
-  }).isRequired,
-  selectedModel: PropTypes.string,
-  onSetSelectedModel: PropTypes.func,
-  onRegenerateMessage: PropTypes.func,
-  onForkChat: PropTypes.func,
-  isLastMessage: PropTypes.bool,
 };
 
 export default ChatMessage;

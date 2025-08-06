@@ -1,5 +1,4 @@
-import PropTypes from 'prop-types';
-import {
+import React, {
   createContext,
   useContext,
   useState,
@@ -8,9 +7,22 @@ import {
 } from 'react';
 import api from '../services/api';
 
-const AuthContext = createContext();
+interface AuthContextType {
+  isAuthenticated: boolean;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  register: (username: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  checkAuth: () => Promise<void>;
+}
 
-export const useAuth = () => {
+interface AuthProviderProps {
+  children: React.ReactNode;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
@@ -18,11 +30,11 @@ export const useAuth = () => {
   return context;
 };
 
-export const AuthProvider = ({ children }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loading, setLoading] = useState(true);
+export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  const fetchSignalRToken = useCallback(async () => {
+  const fetchSignalRToken = useCallback(async (): Promise<string | null> => {
     try {
       const response = await api.post('/signalr-token');
       if (response.data?.token) {
@@ -35,7 +47,7 @@ export const AuthProvider = ({ children }) => {
     return null;
   }, []);
 
-  const checkAuth = useCallback(async () => {
+  const checkAuth = useCallback(async (): Promise<void> => {
     try {
       // Check if we have a stored token (for mobile devices)
       const storedToken = localStorage.getItem('authToken');
@@ -74,7 +86,7 @@ export const AuthProvider = ({ children }) => {
     }
   }, [fetchSignalRToken]);
 
-  const login = useCallback(async (email, password) => {
+  const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     // Use token-based authentication as primary method (no mobile detection)
     try {
       const tokenResponse = await api.post('/login?useCookies=false', { email, password });
@@ -96,10 +108,10 @@ export const AuthProvider = ({ children }) => {
         console.error('❌ Token response missing accessToken:', tokenResponse.data);
         throw new Error('Token not received from server');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Token-based authentication failed:', error);
       
-      let errorMessage;
+      let errorMessage: string;
       if (!error.response) {
         errorMessage = 'Server currently not available';
       } else if (error.response?.status === 404) {
@@ -115,7 +127,7 @@ export const AuthProvider = ({ children }) => {
     }
   }, [fetchSignalRToken]);
 
-  const register = useCallback(async (username, email, password) => {
+  const register = useCallback(async (username: string, email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
       await api.post('/register-user', { 
         username: username,
@@ -125,7 +137,7 @@ export const AuthProvider = ({ children }) => {
       // After successful registration, log the user in
       const loginResult = await login(email, password);
       return loginResult;
-    } catch (error) {
+    } catch (error: any) {
       return {
         success: false,
         error: error.response?.data?.message || error.response?.data?.title || 'Registration failed',
@@ -133,7 +145,7 @@ export const AuthProvider = ({ children }) => {
     }
   }, [login]);
 
-  const logout = useCallback(async () => {
+  const logout = useCallback(async (): Promise<void> => {
     try {
       await api.post('/logout');
     } catch (error) {
@@ -159,7 +171,7 @@ export const AuthProvider = ({ children }) => {
     checkAuth();
   }, [checkAuth]);
 
-  const value = {
+  const value: AuthContextType = {
     isAuthenticated,
     loading,
     login,
@@ -169,8 +181,4 @@ export const AuthProvider = ({ children }) => {
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
-
-AuthProvider.propTypes = {
-  children: PropTypes.node.isRequired,
 };

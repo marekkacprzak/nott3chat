@@ -1,13 +1,13 @@
 // Navigation service to handle routing programmatically
-let navigate = null;
+let navigate: ((route: string) => void) | null = null;
 
 // Set the navigate function from React Router
-export const setNavigate = (navigateFunction) => {
+export const setNavigate = (navigateFunction: (route: string) => void): void => {
   navigate = navigateFunction;
 };
 
 // Navigate to a specific route
-export const navigateTo = (route) => {
+export const navigateTo = (route: string): void => {
   if (navigate) {
     navigate(route);
   } else {

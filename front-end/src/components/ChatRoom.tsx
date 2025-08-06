@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -33,8 +33,7 @@ const ChatRoom = () => {
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [pendingMessage, setPendingMessage] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
-  const [sidebarWidth, setSidebarWidth] = useState(300);
-  const messagesEndRef = useRef(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const { logout } = useAuth();
   const { addNewChat, chats, hasLoaded } = useChats();
   const { chatId } = useParams();
@@ -69,7 +68,12 @@ const ChatRoom = () => {
 
   // Choose chat when chatId changes
   useEffect(() => {
-    chooseChat(chatId).then(() => setIsCreatingChat(false));
+    if (chatId) {
+      chooseChat(chatId).then(() => setIsCreatingChat(false));
+    } else {
+      // When chatId is undefined (navigating to /chat/), clear the chat
+      chooseChat(null);
+    }
   }, [chatId, chooseChat]);
 
   useEffect(() => {
@@ -84,7 +88,7 @@ const ChatRoom = () => {
         .reverse()
         .find(msg => msg.type === 'assistant' && msg.chatModel);
       
-      if (lastAssistantMessage) {
+      if (lastAssistantMessage && lastAssistantMessage.chatModel) {
         setSelectedModel(lastAssistantMessage.chatModel);
       }
     }
@@ -100,27 +104,45 @@ const ChatRoom = () => {
     }
   }, [isConnected, pendingMessage, isCreatingChat, sendMessage, selectedModel]);
 
-  const forkChat = useCallback(async (messageId) => {
+  const forkChat = useCallback(async (messageId: string) => {
+    if (!chatId) return;
+    
     try {
-      const newChat = await chatApi.forkChat(chatId, messageId);
+      const newChatId = await chatApi.forkChat(chatId, messageId);
+      // Create a chat object for addNewChat - it expects a Chat object
+      const now = new Date().toISOString();
+      const newChat = { 
+        id: newChatId, 
+        title: 'New Chat', 
+        createdAt: now,
+        updatedAt: now
+      };
       addNewChat(newChat);
-      navigate(`/chat/${newChat.id}`);
+      navigate(`/chat/${newChatId}`);
     } catch (error) {
       console.error('Error forking chat:', error);
     }
   }, [addNewChat, navigate, chatId]); 
 
   const createNewChatAndSend = useCallback(
-    async (message) => {
+    async (message: string) => {
       setIsCreatingChat(true);
       try {
-        const newChat = await chatApi.createNewChat();
+        const newChatId = await chatApi.createNewChat();
+        // Create a chat object for addNewChat
+        const now = new Date().toISOString();
+        const newChat = { 
+          id: newChatId, 
+          title: 'New Chat', 
+          createdAt: now,
+          updatedAt: now
+        };
         // Add to chat list
         addNewChat(newChat);
         // Set the pending message to send after connection
         setPendingMessage(message);
         // Navigate to the new chat
-        navigate(`/chat/${newChat.id}`);
+        navigate(`/chat/${newChatId}`);
         // Clear input and creating state
         setMessageInput('');
       } catch (error) {
@@ -133,7 +155,7 @@ const ChatRoom = () => {
   );
 
   const handleSendMessage = useCallback(
-    async (e) => {
+    async (e: React.FormEvent) => {
       e.preventDefault();
       if (!messageInput.trim()) return;
 
@@ -154,7 +176,7 @@ const ChatRoom = () => {
   }, [logout]);
 
   const handleChatSelect = useCallback(
-    (selectedChatId) => {
+    (selectedChatId: string | null) => {
       if (selectedChatId) {
         navigate(`/chat/${selectedChatId}`);
       } else {
@@ -163,10 +185,6 @@ const ChatRoom = () => {
     },
     [navigate]
   );
-
-  const handleSidebarResize = useCallback((width) => {
-    setSidebarWidth(width);
-  }, []);
 
   return (
     <div className="chat-room">
@@ -235,7 +253,6 @@ const ChatRoom = () => {
           <ChatSidebar
             onChatSelect={handleChatSelect}
             currentChatId={chatId}
-            onSidebarResize={handleSidebarResize}
             shouldStartCollapsed={shouldStartCollapsed}
           />
           
@@ -317,10 +334,12 @@ const ChatRoom = () => {
                   onMouseDown={(e) => {
                     e.preventDefault();
                     const startY = e.clientY;
-                    const inputArea = e.target.parentElement;
+                    const inputArea = (e.target as HTMLElement).parentElement;
+                    if (!inputArea) return;
+                    
                     const startHeight = inputArea.offsetHeight;
                     
-                    const handleMouseMove = (moveEvent) => {
+                    const handleMouseMove = (moveEvent: MouseEvent) => {
                       const deltaY = startY - moveEvent.clientY;
                       const newHeight = Math.max(120, startHeight + deltaY);
                       inputArea.style.height = `${newHeight}px`;
@@ -343,10 +362,12 @@ const ChatRoom = () => {
                     }
                     
                     const startY = e.touches[0].clientY;
-                    const inputArea = e.target.parentElement;
+                    const inputArea = (e.target as HTMLElement).parentElement;
+                    if (!inputArea) return;
+                    
                     const startHeight = inputArea.offsetHeight;
                     
-                    const handleTouchMove = (moveEvent) => {
+                    const handleTouchMove = (moveEvent: TouchEvent) => {
                       // Prevent default to avoid scrolling
                       moveEvent.preventDefault();
                       

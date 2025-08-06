@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Box,
@@ -22,7 +22,7 @@ const LoginPage = () => {
   const navigate = useNavigate();
 
   const handleSubmit = useCallback(
-    async (e) => {
+    async (e: React.FormEvent) => {
       e.preventDefault();
       setError('');
       setLoading(true);
@@ -33,7 +33,7 @@ const LoginPage = () => {
         navigate('/chat');
       } else {
         console.error('❌ Login failed:', result.error);
-        setError(result.error);
+        setError(result.error || 'Login failed');
       }
 
       setLoading(false);

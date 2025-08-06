@@ -1,5 +1,5 @@
-import { useEffect, useCallback } from 'react';
-import PropTypes from 'prop-types';
+import React, { useEffect, useCallback } from 'react';
+
 import lcn from 'light-classnames';
 import {
   FormControl,
@@ -54,7 +54,13 @@ const providerClasses = {
   Perplexity: 'perplexity',
 };
 
-const ModelSelector = ({ selectedModel, onModelChange, disabled }) => {
+interface ModelSelectorProps {
+  selectedModel: string;
+  onModelChange: (model: string) => void;
+  disabled?: boolean;
+}
+
+const ModelSelector: React.FC<ModelSelectorProps> = ({ selectedModel, onModelChange, disabled }) => {
   const { models, loading, error } = useModels();
 
   useEffect(() => {
@@ -65,7 +71,7 @@ const ModelSelector = ({ selectedModel, onModelChange, disabled }) => {
   }, [selectedModel, onModelChange, models]);
 
   const handleChange = useCallback(
-    (event) => {
+    (event: any) => {
       onModelChange(event.target.value);
     },
     [onModelChange]
@@ -111,10 +117,10 @@ const ModelSelector = ({ selectedModel, onModelChange, disabled }) => {
               <Box className="render-value">
                 <Box
                   className={lcn('provider-icon', {
-                    [providerClasses[model.provider] || 'custom']: true,
+                    [(providerClasses as any)[model.provider || 'custom'] || 'custom']: true,
                   })}
                 >
-                  {providerIcons[model.provider] || <Extension />}
+                  {(providerIcons as any)[model.provider || 'custom'] || <Extension />}
                 </Box>
                 <Typography variant="body2" className="model-name">
                   {model.name}
@@ -128,10 +134,10 @@ const ModelSelector = ({ selectedModel, onModelChange, disabled }) => {
               <Box className="menu-item">
                 <Box
                   className={lcn('menu-item-icon provider-icon', {
-                    [providerClasses[model.provider] || 'custom']: true,
+                    [(providerClasses as any)[model.provider || 'custom'] || 'custom']: true,
                   })}
                 >
-                  {providerIcons[model.provider] || <Extension />}
+                  {(providerIcons as any)[model.provider || 'custom'] || <Extension />}
                 </Box>
                 <Box className="menu-item-content">
                   <Typography variant="body2" className="menu-item-title">
@@ -150,10 +156,6 @@ const ModelSelector = ({ selectedModel, onModelChange, disabled }) => {
   );
 };
 
-ModelSelector.propTypes = {
-  selectedModel: PropTypes.string,
-  onModelChange: PropTypes.func.isRequired,
-  disabled: PropTypes.bool,
-};
+
 
 export default ModelSelector;

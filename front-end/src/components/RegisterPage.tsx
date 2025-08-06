@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Box,
@@ -45,7 +45,7 @@ const RegisterPage = () => {
   }, [password]);
   
   const handleSubmit = useCallback(
-    async (e) => {
+    async (e: React.FormEvent) => {
       e.preventDefault();
       
       // Client-side validation
@@ -77,7 +77,7 @@ const RegisterPage = () => {
       if (result.success) {
         navigate('/chat');
       } else {
-        setError(result.error);
+        setError(result.error || 'Registration failed');
       }
 
       setLoading(false);

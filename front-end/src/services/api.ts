@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { InternalAxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
 import { navigateTo } from './navigationService';
 
 const api = axios.create({
@@ -11,20 +11,23 @@ const api = axios.create({
 
 // Add request interceptor to include token if available
 api.interceptors.request.use(
-  (config) => {
+  (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('authToken');
-    if (token && !config.headers.Authorization) {
+    if (token && !config.headers?.Authorization) {
+      if (!config.headers) {
+        config.headers = {} as any;
+      }
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error: AxiosError) => Promise.reject(error)
 );
 
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error?.url && error.url!='/manage/info')
+  (response: AxiosResponse) => response,
+  (error: AxiosError) => {
+    if (error?.config?.url && error.config.url !== '/manage/info')
     console.error('🚨 API Error:', {
       status: error.response?.status,
       url: error.config?.url,

@@ -1,16 +1,24 @@
 import React from 'react';
 
-class ConsoleLoggerErrorBoundary extends React.Component {
-  constructor(props) {
+interface Props {
+  children: React.ReactNode;
+}
+
+interface State {
+  hasError: boolean;
+}
+
+class ConsoleLoggerErrorBoundary extends React.Component<Props, State> {
+  constructor(props: Props) {
     super(props);
     this.state = { hasError: false };
   }
 
-  static getDerivedStateFromError(error) {
+  static getDerivedStateFromError(_error: Error): State {
     return { hasError: true };
   }
 
-  componentDidCatch(error, errorInfo) {
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('ConsoleLogger Error:', error, errorInfo);
   }
 
