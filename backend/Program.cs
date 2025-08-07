@@ -1,11 +1,6 @@
-using LlmTornado.Chat.Models;
-using LlmTornado.Code;
-using LlmTornado;
-using LlmTornado.Chat;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
-using System.Text;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using System.ComponentModel.DataAnnotations;
@@ -17,56 +12,150 @@ using NotT3ChatBackend.Hubs;
 using NotT3ChatBackend.DTOs;
 using Microsoft.AspNetCore.Http.HttpResults;
 using NotT3ChatBackend.Endpoints;
-using LlmTornado.Code.Models;
 using NotT3ChatBackend.Utils;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.RegularExpressions;
-
+using Azure.AI.OpenAI;
+using Azure.Identity;
+using System.Text;
+using Azure.Security.KeyVault.Secrets;
+using System.Reflection;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
+using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
+using Serilog.Events;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+ 
 // This code is staying in one file for now as an intentional experiment for .NET 10's dotnet run app.cs feature,
 // but we are aware of the importance of separating so we are currently assigning regions to be split when the time is right.
 
-namespace NotT3ChatBackend {
-
+namespace NotT3ChatBackend
+{
     #region Program.cs
-    public class Program {
-        public static void Main(string[] args) {
+    public class Program
+    {
+        public static async Task Main(string[] args)
+        {
+            await Task.Delay(0);
             var builder = WebApplication.CreateBuilder(args);
-            
-            // Configure Serilog
-            Log.Logger = new LoggerConfiguration()
-                .WriteTo.Console()
-                //.WriteTo.File("logs/app.log", rollingInterval: RollingInterval.Day)
-                .CreateLogger();
 
-            builder.Host.UseSerilog();
+            // Add explicit environment variable configuration support
+            builder.Configuration.AddEnvironmentVariables();
+            builder.Configuration.AddUserSecrets(Assembly.GetExecutingAssembly());
 
-            builder.Services.AddDbContext<AppDbContext>(opt =>
-                        // opt.UseInMemoryDatabase("DB"));
-                        opt.UseSqlite("Data Source=databse.dat"));
+            if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
+            {
+                builder.Services.AddApplicationInsightsTelemetry();
+            }
 
-            builder.Services.AddMemoryCache();
-            builder.Services.AddAuthentication();
-            builder.Services.AddAuthorization();
-            builder.Services.AddEndpointsApiExplorer();
-
-            // Add CORS services
-            builder.Services.AddCors(options => {
-                // This is OSS project, feel free to update this for your own use-cases
-                options.AddPolicy("OpenCorsPolicy", policy => {
-                    policy.SetIsOriginAllowed(_ => true)
-                        .AllowAnyHeader()
-                        .AllowAnyMethod()
-                        .AllowCredentials();
-                });
+            builder.Host.UseSerilog((context, services, loggerConfiguration) =>
+            {
+                var config = loggerConfiguration
+                    .ReadFrom.Configuration(context.Configuration)
+                    .ReadFrom.Services(services)
+                    .Enrich.FromLogContext()
+                    .Enrich.WithProperty("Application", "NotT3ChatBackend")
+                    .Enrich.WithProperty("DeployTime", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"))
+                    .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName);
+                if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
+                {
+                    config.WriteTo.ApplicationInsights(
+                        context.Configuration["APPLICATIONINSIGHTS:CONNECTIONSTRING"],
+                        TelemetryConverter.Traces,
+                        restrictedToMinimumLevel: LogEventLevel.Information // You can adjust this level
+                    );
+                }
             });
 
+            Console.WriteLine(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")); 
+            // Development path
+            var connectionString = "Data Source=database.dat";
+            if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
+            {
+                // Azure File Storage path for Linux production
+                var dbPath = "/mnt/azurefileshare/database.dat";
+                var directory = Path.GetDirectoryName(dbPath);
+                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+                connectionString = $"Data Source={dbPath}";                
+                
+                //createa file in directory with "test" content
+                File.WriteAllText(Path.Combine(directory!, "test.txt"), DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"));
+            }
+            builder.Services.AddDbContext<AppDbContext>(opt =>
+            //  opt.UseInMemoryDatabase("DB"));
+                opt.UseSqlite(connectionString));
+            builder.Services.AddMemoryCache();
+            builder.Services.AddAuthorization();
+            builder.Services.AddEndpointsApiExplorer();
+            // Add CORS services
+            builder.Services.AddCors(options =>
+            {
+                // This is OSS project, feel free to update this for your own use-cases
+                options.AddPolicy("OpenCorsPolicy", policy =>
+                {
+                    policy.SetIsOriginAllowed(origin =>
+                    {
+                        // We'll log this in middleware instead to get proper source context
+                        return true; // Allow all origins for development
+                    })
+                    .AllowAnyHeader()
+                    .AllowAnyMethod()
+                    .AllowCredentials()
+                    .SetPreflightMaxAge(TimeSpan.FromSeconds(86400)); // Cache preflight for 24 hours
+                });
+            });
             builder.Services.AddIdentityApiEndpoints<NotT3User>()
                         .AddRoles<IdentityRole>()
                         .AddEntityFrameworkStores<AppDbContext>()
                         .AddDefaultTokenProviders();
+            
+            // Add JWT Bearer authentication for SignalR
+            var key = GetJwtSecretKey(builder.Configuration);
 
-            builder.Services.ConfigureApplicationCookie(options => {
-                if (builder.Environment.IsProduction()) {
+            builder.Services.AddAuthentication()
+                .AddJwtBearer("SignalRBearer", options =>
+                {
+                    options.RequireHttpsMetadata = false;
+                    options.SaveToken = true;
+                    options.TokenValidationParameters = new TokenValidationParameters
+                    {
+                        ValidateIssuerSigningKey = true,
+                        IssuerSigningKey = new SymmetricSecurityKey(key),
+                        ValidateIssuer = false,
+                        ValidateAudience = false,
+                        ValidateLifetime = true,
+                        ClockSkew = TimeSpan.Zero
+                    };
+
+                    // Configure JWT authentication for SignalR WebSocket connections
+                    options.Events = new JwtBearerEvents
+                    {
+                        OnMessageReceived = context =>
+                        {
+                            var accessToken = context.Request.Query["access_token"];
+
+                            // If the request is for our hub...
+                            var path = context.HttpContext.Request.Path;
+                            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chat"))
+                            {
+                                // Read the token out of the query string
+                                context.Token = accessToken;
+                            }
+                            return Task.CompletedTask;
+                        }
+                    };
+                });
+
+            builder.Services.ConfigureApplicationCookie(options =>
+            {
+                if (builder.Environment.IsProduction())
+                {
                     options.Cookie.SameSite = SameSiteMode.None;
                     options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
                 }
@@ -85,70 +174,168 @@ namespace NotT3ChatBackend {
                 options.Password.RequireLowercase = false;
                 options.Password.RequireUppercase = false;
             });
-
+            
             builder.Services.AddSignalR();
-            builder.Services.AddSingleton<TornadoService>();
+            builder.Services.AddSingleton<IOpenAiService, ChatService>();
             builder.Services.AddScoped<StreamingService>();
-
-            var app = builder.Build();
+            builder.Services.AddScoped<IPerplexityService, PerplexityService>();
+            builder.Services.AddHttpClient<IPerplexityService, PerplexityService>();
+            builder.Services.AddDataProtection().UseCryptographicAlgorithms(
+                new AuthenticatedEncryptorConfiguration
+                {
+                    EncryptionAlgorithm = EncryptionAlgorithm.AES_256_CBC,
+                    ValidationAlgorithm = ValidationAlgorithm.HMACSHA256
+                });
+            var app = builder.Build(); 
 
             // Initialize database and create admin user
             using (var scope = app.Services.CreateScope()) {
                 var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var userManager = scope.ServiceProvider.GetRequiredService<UserManager<NotT3User>>();
-
+                var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
                 context.Database.EnsureCreated();
-
 #if DEBUG
-                Log.Information("Creating debug admin user");
+                logger.LogDebug("Creating debug admin user");
                 var adminUser = new NotT3User { UserName = "admin@example.com", Email = "admin@example.com" };
                 var result = userManager.CreateAsync(adminUser, "admin").Result;
                 if (result.Succeeded)
-                    Log.Information("Admin user created successfully");
+                    logger.LogDebug("Admin user created successfully");
                 else
-                    Log.Warning("Failed to create admin user: {Errors}", string.Join(", ", result.Errors.Select(e => e.Description)));
+                    logger.LogWarning("Failed to create admin user: {Errors}", string.Join(", ", result.Errors.Select(e => e.Description)));
 #endif
             }
 
-            Log.Information("Configuring HTTP pipeline");
-            app.UseRouting();
+            var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
+            appLogger.LogDebug("Configuring HTTP pipeline");
             app.UseCors("OpenCorsPolicy");
-
-            // Configure the HTTP request pipeline.
+            
+            // Add CORS logging middleware
+            app.Use(async (context, next) =>
+            {
+                var corsLogger = context.RequestServices.GetRequiredService<ILogger<CorsLoggingMiddleware>>();
+                var origin = context.Request.Headers.Origin.FirstOrDefault();
+                if (!string.IsNullOrEmpty(origin))
+                {
+                    corsLogger.LogDebug("CORS request from origin: {Origin}", origin);
+                }
+                await next();
+            });
+            
+            app.UseRouting();
             app.UseAuthentication();
             app.UseAuthorization();
 
-            Log.Information("Mapping endpoints");
-
-            app.MapGet("/health", () => TypedResults.Ok());
+            appLogger.LogDebug("Mapping endpoints");
+            app.MapGet("/health", (ILogger<Program> logger) =>
+            {
+                var testFileContent = DateTime.UtcNow.ToString("o");
+                if (false && Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
+                {
+                    var dbPath = "/mnt/azurefileshare/database.dat";
+                    var directory = Path.GetDirectoryName(dbPath);
+                    testFileContent = File.ReadAllText(Path.Combine(directory!, "test.txt"));
+                }
+                logger.LogDebug("Health check requested");
+                return TypedResults.Ok(testFileContent);
+            });
             app.MapIdentityApi<NotT3User>();
             app.MapPost("/logout", async (SignInManager<NotT3User> signInManager) => {
                 await signInManager.SignOutAsync();
                 return TypedResults.Ok();
             }).RequireAuthorization();
+            
+            // JWT token endpoint for SignalR
+            app.MapPost("/signalr-token", async (UserManager<NotT3User> userManager, HttpContext context, IConfiguration configuration) => {
+                var user = await userManager.GetUserAsync(context.User);
+                if (user == null) {
+                    return Results.Unauthorized();
+                }
+
+                var key = GetJwtSecretKey(configuration);
+                var tokenHandler = new JwtSecurityTokenHandler();
+                var tokenDescriptor = new SecurityTokenDescriptor
+                {
+                    Subject = new ClaimsIdentity(new[]
+                    {
+                        new Claim(ClaimTypes.NameIdentifier, user.Id),
+                        new Claim(ClaimTypes.Name, user.UserName ?? user.Email ?? ""),
+                        new Claim(ClaimTypes.Email, user.Email ?? "")
+                    }),
+                    Expires = DateTime.UtcNow.AddDays(1),
+                    SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+                };
+
+                var token = tokenHandler.CreateToken(tokenDescriptor);
+                var tokenString = tokenHandler.WriteToken(token);
+
+                return Results.Ok(new { token = tokenString });
+            }).RequireAuthorization();
             app.MapModelEndpoints();
             app.MapChatEndpoints();
-
             app.Run();
+        }
+        public static Tuple<string, string> GenerateSecurityStamp(string password)
+        {
+            int length = 32;
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            var random = new Random();
+            var stamp = new string(Enumerable.Repeat(chars, length)
+                .Select(s => s[random.Next(s.Length)]).ToArray());
+            var hasher = new PasswordHasher<IdentityUser>();
+            var hash = hasher.HashPassword(new NotT3User(), password);
+            return new Tuple<string, string>(stamp, hash);
+        }
+        public static async Task CreateUser(string userName, string email, string password, UserManager<NotT3User> userManager)
+        {
+            var user = new NotT3User { UserName = userName, Email = email };
+            var result = await userManager.CreateAsync(user, password);
+            if (!result.Succeeded)
+            {
+                throw new Exception($"Failed to create user: {string.Join(", ", result.Errors.Select(e => e.Description))}");
+            }
+        }
+        private static byte[] GetJwtSecretKey(IConfiguration configuration)
+        {
+            var jwtSecretKey = configuration["Jwt:SecretKey"] ?? "ThisIsAVeryLongSecretKeyForJWTTokenGeneration123456789";
+            return Encoding.ASCII.GetBytes(jwtSecretKey);
         }
     }
 }
+
+public static class Startup
+{
+}
+
+public class CorsLoggingMiddleware
+{
+    // Marker class for logging
+}
 #endregion
 
-namespace NotT3ChatBackend.Endpoints {
+namespace NotT3ChatBackend.Endpoints
+{
     #region Endpoints/ChatEndpoints.cs
     public class ChatEndpointsMarker;
-    public static class ChatEndpoints {
-        public static void MapChatEndpoints(this IEndpointRouteBuilder app) {
-            app.MapHub<ChatHub>("/chat").RequireAuthorization();
+    public static class ChatEndpoints
+    {
+        public static void MapChatEndpoints(this IEndpointRouteBuilder app)
+        {
+            app.MapHub<ChatHub>("/chat").RequireAuthorization(policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.AuthenticationSchemes.Add(IdentityConstants.ApplicationScheme);
+                policy.AuthenticationSchemes.Add(IdentityConstants.BearerScheme);
+                policy.AuthenticationSchemes.Add("SignalRBearer"); // Add our custom JWT scheme for SignalR
+            });
             app.MapPost("/chats/new", NewChat).RequireAuthorization();
             app.MapPost("/chats/fork", ForkChat).RequireAuthorization();
             app.MapDelete("/chats/{conversationId}", DeleteChat).RequireAuthorization();
             app.MapGet("/chats", GetChats).RequireAuthorization();
+            app.MapPost("/register-user", RegisterUser);
         }
 
         public static async Task<NoContent> DeleteChat(string conversationId, AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger, IHubContext<ChatHub> hubContext) {
-            logger.LogInformation("Deleting conversation {ConversationId} for user", conversationId);
+            logger.LogDebug("Deleting conversation {ConversationId} for user", conversationId);
             try {
                 var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
                 var convo = await dbContext.GetConversationAsync(conversationId, user);
@@ -156,7 +343,7 @@ namespace NotT3ChatBackend.Endpoints {
                 await dbContext.SaveChangesAsync();
 
                 await hubContext.Clients.Group(user.Id).SendAsync("DeleteConversation", convo.Id);
-                logger.LogInformation("Conversation {ConversationId} deleted successfully", conversationId);
+                logger.LogDebug("Conversation {ConversationId} deleted successfully", conversationId);
                 return TypedResults.NoContent();
             }
             catch (Exception ex) {
@@ -166,7 +353,7 @@ namespace NotT3ChatBackend.Endpoints {
         }
 
         public static async Task<Ok<NotT3ConversationDTO>> ForkChat([FromBody] ForkChatRequestDTO request, AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger, IHubContext<ChatHub> hubContext) {
-            logger.LogInformation("Forking conversation {ConversationId} from message {MessageId} for user", request.ConversationId, request.MessageId);
+            logger.LogDebug("Forking conversation {ConversationId} from message {MessageId} for user", request.ConversationId, request.MessageId);
 
             try {
                 // Retrieve our conversation & messages
@@ -183,7 +370,7 @@ namespace NotT3ChatBackend.Endpoints {
                 }
 
                 // Create a new conversation with the forked messages
-                logger.LogInformation("Forking conversation at index {ForkIndex} with {MessageCount} messages", forkIndex, messages.Count);
+                logger.LogDebug("Forking conversation at index {ForkIndex} with {MessageCount} messages", forkIndex, messages.Count);
                 var newConvo = await dbContext.CreateConversationAsync(user);
                 // Copy the title from the original conversation - append (Fork), (Fork_2), ...
                 newConvo.Title = convo.Title.Contains("(Branch")
@@ -205,7 +392,7 @@ namespace NotT3ChatBackend.Endpoints {
                 await dbContext.SaveChangesAsync();
 
                 _ = hubContext.Clients.Group(user.Id).SendAsync("NewConversation", new NotT3ConversationDTO(newConvo));
-                logger.LogInformation("New conversation created with ID: {ConversationId}", convo.Id);
+                logger.LogDebug("New conversation created with ID: {ConversationId}", convo.Id);
                 return TypedResults.Ok(new NotT3ConversationDTO(newConvo));
             }
             catch (Exception ex) {
@@ -215,13 +402,13 @@ namespace NotT3ChatBackend.Endpoints {
         }
 
         public static async Task<Ok<List<NotT3ConversationDTO>>> GetChats(AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger) {
-            logger.LogInformation("Retrieving conversations for user");
+            logger.LogDebug("Retrieving conversations for user");
             try {
                 var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
                 await dbContext.Entry(user).Collection(u => u.Conversations).LoadAsync();
                 var conversations = user.Conversations.OrderByDescending(c => c.CreatedAt)
                                                       .Select(c => new NotT3ConversationDTO(c)).ToList();
-                logger.LogInformation("Retrieved {Count} conversations for user", conversations.Count);
+                logger.LogDebug("Retrieved {Count} conversations for user", conversations.Count);
                 return TypedResults.Ok(conversations);
             }
             catch (Exception ex) {
@@ -231,17 +418,33 @@ namespace NotT3ChatBackend.Endpoints {
         }
         
         public static async Task<Ok<NotT3ConversationDTO>> NewChat(AppDbContext dbContext, HttpContext context, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger, IHubContext<ChatHub> hubContext) {
-            logger.LogInformation("Creating new conversation for user");
+            logger.LogDebug("Creating new conversation for user");
             try {
                 var user = await userManager.GetUserAsync(context.User) ?? throw new UnauthorizedAccessException();
                 var convo = await dbContext.CreateConversationAsync(user);
 
                 _ = hubContext.Clients.Group(user.Id).SendAsync("NewConversation", new NotT3ConversationDTO(convo));
-                logger.LogInformation("New conversation created with ID: {ConversationId}", convo.Id);
+                logger.LogDebug("New conversation created with ID: {ConversationId}", convo.Id);
                 return TypedResults.Ok(new NotT3ConversationDTO(convo));
             }
             catch (Exception ex) {
                 logger.LogError(ex, "Error creating new conversation");
+                throw;
+            }
+        }
+
+        public static async Task<Ok> RegisterUser([FromBody] RegisterUserRequestDto request, UserManager<NotT3User> userManager, ILogger<ChatEndpointsMarker> logger)
+        {
+            logger.LogDebug("Registering new user with username: {Username} and email: {Email}", request.Username, request.UserEmail);
+            try
+            {
+                await Program.CreateUser(request.Username, request.UserEmail, request.Password, userManager);
+                logger.LogDebug("User {Username} registered successfully", request.Username);
+                return TypedResults.Ok();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error registering user {Username}", request.Username);
                 throw;
             }
         }
@@ -256,9 +459,9 @@ namespace NotT3ChatBackend.Endpoints {
             app.MapGet("/models", GetAvailableModels);
         }
 
-        public static Ok<ICollection<ChatModelDTO>> GetAvailableModels(TornadoService tornadoService, ILogger<ModelEndpointsMarker> logger) {
-            var models = tornadoService.GetAvailableModels();
-            logger.LogInformation("Retrieved {Count} available models", models.Count);
+        public static Ok<ICollection<ChatModelDto>> GetAvailableModels(IOpenAiService openAiService, ILogger<ModelEndpointsMarker> logger) {
+            var models = openAiService.GetAvailableModels();
+            logger.LogDebug("Retrieved {Count} available models", models.Count);
             return TypedResults.Ok(models);
         }
     }
@@ -266,107 +469,407 @@ namespace NotT3ChatBackend.Endpoints {
 }
 
 namespace NotT3ChatBackend.Services {
-    #region Services/TorandoService.cs
-    public class TornadoService {
-        private readonly TornadoApi _api;
+    #region Services/IOpenAIService.cs
+    public interface IOpenAiService {
+        ICollection<ChatModelDto> GetAvailableModels();
+        Task InitiateConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete);
+        Task InitiateTitleAssignment(string initialMessage, Func<string, ValueTask> onComplete);
+    }
+    #endregion
+
+    #region Services/ChatService.cs
+    public class ChatService : IOpenAiService {
+        private readonly ILogger<ChatService> _logger;
+        private readonly IConfiguration _configuration;
+        private readonly HttpClient _httpClient;
         private readonly string[] _models;
         private readonly string? _titleModel;
-        private readonly ILogger<TornadoService> _logger;
+        private readonly bool _useOpenAi;
+        private readonly AzureOpenAIClient? _azureClient;
+        private readonly IPerplexityService _perplexityService;
 
-        public TornadoService(ILogger<TornadoService> logger, IConfiguration configuration) {
+        public ChatService(ILogger<ChatService> logger, IConfiguration configuration, IPerplexityService perplexityService) {
             _logger = logger;
-            
-            var providerAuthentications = new List<ProviderAuthentication>();
-            var allModels = new List<string>();
-            foreach (var (configKey, provider, vendorProvider) in new (string, LLmProviders, BaseVendorModelProvider)[] {
-                ("GOOGLE_API_KEY", LLmProviders.Google, ChatModel.Google),
-                ("OAI_API_KEY", LLmProviders.OpenAi, ChatModel.OpenAi),
-                ("ANTHROPIC_API_KEY", LLmProviders.Anthropic, ChatModel.Anthropic),
-                ("OPENROUTER_API_KEY", LLmProviders.OpenRouter, ChatModel.OpenRouter),
-                // ("AZURE_OAI_API_KEY", LLmProviders.AzureOpenAi, ChatModel.OpenAi), // Figure out how this conflicts with OpenAi
-                ("COHERE_API_KEY", LLmProviders.Cohere, ChatModel.Cohere),
-                ("GROQ_API_KEY", LLmProviders.Groq, ChatModel.Groq),
-                ("DEEPSEEK_API_KEY", LLmProviders.DeepSeek, ChatModel.DeepSeek),
-                ("MISTRAL_API_KEY", LLmProviders.Mistral, ChatModel.Mistral),
-                ("XAI_API_KEY", LLmProviders.XAi, ChatModel.XAi),
-                ("PERPLEXITY_API_KEY", LLmProviders.Perplexity, ChatModel.Perplexity),
-            }) {
-                if (configuration[configKey] is string apiKey && !string.IsNullOrEmpty(apiKey)) {
-                    providerAuthentications.Add(new ProviderAuthentication(provider, apiKey));
-                    allModels.AddRange(vendorProvider.AllModels.Select(m => m.Name));
-                    logger.LogInformation("{Provider} API key configured", provider);
+            _configuration = configuration;
+            _httpClient = new HttpClient();
+            _perplexityService = perplexityService;
+
+            // Check OpenAI configuration first (preferred)
+            var openAiApiKey = configuration["OpenAI:ApiKey"] ?? GetOpenApiKeyFromVault(configuration);
+            if (!string.IsNullOrEmpty(openAiApiKey))
+            {
+                _useOpenAi = true;
+                _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", openAiApiKey);
+                var modelsConfig = configuration.GetSection("OpenAI:Models").Get<string[]>();
+                _models = modelsConfig ?? ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"];
+                _titleModel = configuration["OpenAI:TitleModel"] ?? "gpt-4o-mini";
+                _logger.LogDebug("ChatService initialized with OpenAI API using {ModelCount} models", _models.Length);
+            }
+            else {
+                // Fallback to Azure OpenAI
+                _useOpenAi = false;
+                var azureEndpoint = configuration["AzureOpenAI:Endpoint"];
+                if (string.IsNullOrEmpty(azureEndpoint)) {
+                    throw new InvalidOperationException("Either OpenAI:ApiKey or AzureOpenAI:Endpoint configuration is required");
+                }
+
+                var credential = new DefaultAzureCredential();
+                _azureClient = new AzureOpenAIClient(new Uri(azureEndpoint), credential);
+                
+                var modelsConfig = configuration.GetSection("AzureOpenAI:Models").Get<string[]>();
+                _models = modelsConfig ?? ["gpt-4o-mini", "gpt-4o", "gpt-35-turbo"];
+                _titleModel = configuration["AzureOpenAI:TitleModel"] ?? "gpt-4o-mini";
+                _logger.LogDebug("ChatService initialized with Azure OpenAI using {ModelCount} models", _models.Length);
+            }
+        }
+
+        private static string GetOpenApiKeyFromVault(IConfiguration configuration)
+        {
+            // Add Azure Key Vault Configuration
+            var keyVaultUrl = configuration["KeyVaultUrl"];
+            if (!string.IsNullOrEmpty(keyVaultUrl))
+            {
+                var secretClient = new SecretClient(new Uri(keyVaultUrl), new DefaultAzureCredential());
+                // Example: Retrieve a secret
+                var secret = secretClient.GetSecret("OpenApiKey");
+                return secret.Value.Value;
+            }
+
+            return string.Empty;
+        }
+
+        public ICollection<ChatModelDto> GetAvailableModels()
+        {
+            var provider = _useOpenAi ? "OpenAI" : "Azure OpenAI";
+            return _models.Select(m => new ChatModelDto(m, provider)).ToList();
+        }
+
+        public async Task InitiateConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
+            _logger.LogDebug("Initiating conversation with model: {Model}, message count: {MessageCount}, provider: {Provider}", 
+                model, messages.Count, _useOpenAi ? "OpenAI" : "Azure OpenAI");
+
+            try {
+                // Handle Perplexity model differently
+                if (model.Equals("perplexity", StringComparison.OrdinalIgnoreCase))
+                {
+                    await InitiatePerplexityStreamConversationAsync(model, messages, onContentReceived, onComplete);
+                }
+                else if (_useOpenAi) {
+                    await InitiateOpenAIConversationAsync(model, messages, onContentReceived, onComplete);
+                }
+                else {
+                    await InitiateAzureConversationAsync(model, messages, onContentReceived, onComplete);
                 }
             }
-
-            // Choose the title model - if it doesn't exist in the list of available models, then just don't
-            _titleModel = configuration["NOTT3CHAT_TITLE_MODEL"] ?? "gemini-2.0-flash-lite-001";
-            if (!allModels.Contains(_titleModel)) {
-                _titleModel = null;
-                logger.LogWarning("Title model {TitleModel} not found in available models, skipping", _titleModel);
-            }
-
-            if (configuration["NOTT3CHAT_MODELS_FILTER"] is string modelsFilter && !string.IsNullOrWhiteSpace(modelsFilter)) {
-                var modelsFilterArr = modelsFilter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                allModels = [.. allModels.Where(modelsFilterArr.Contains)];
-                logger.LogInformation("Found models filter {Filter}, removing the rest", modelsFilter);
-            }
-
-            _api = new TornadoApi(providerAuthentications);
-            _models = [.. allModels];
-            logger.LogInformation("TorandoService initialized with {ModelCount} models", _models.Length);
-        }
-
-        public ICollection<ChatModelDTO> GetAvailableModels() {
-            return [.. _models.Select(m => new ChatModelDTO(m))];
-        }
-
-        public async Task InitiateConversationAsync(string model, ICollection<NotT3Message> messages, ExtendedChatStreamEventHandler handler) {
-            _logger.LogInformation("Initiating conversation with model: {Model}, message count: {MessageCount}", model, messages.Count);
-            try {
-                var convo = _api.Chat.CreateConversation(model);
-                foreach (var msg in messages)
-                    convo.AppendMessage(msg.Role, msg.Content);
-                await convo.StreamResponseRich(handler);
-                _logger.LogInformation("Conversation streaming completed");
-            }
             catch (Exception ex) {
-                await (handler.ExceptionOccurredHandler?.Invoke(ex) ?? ValueTask.CompletedTask);
+                await onComplete(ex);
                 _logger.LogError(ex, "Error during conversation streaming");
                 throw;
             }
         }
 
-        public async Task InitiateTitleAssignment(string initialMessage, Func<ChatRichResponse, ValueTask> onComplete) {
+        private async Task InitiateOpenAIConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
+            var requestBody = new {
+                model = model,
+                messages = messages.Select(m => new { role = m.Role, content = m.Content }).ToArray(),
+                stream = true
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions")
+            {
+                Content = content
+            };
+
+            var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
+
+            var stream = await response.Content.ReadAsStreamAsync();
+            using var reader = new StreamReader(stream);
+
+            var contentBuilder = new StringBuilder();
+
+            while (await reader.ReadLineAsync() is { } line) {
+                if (line.StartsWith("data: ")) {
+                    var data = line.Substring(6);
+                    if (data == "[DONE]") {
+                        break;
+                    }
+
+                    try {
+                        using var jsonDoc = System.Text.Json.JsonDocument.Parse(data);
+                        var choices = jsonDoc.RootElement.GetProperty("choices");
+                        if (choices.GetArrayLength() > 0) {
+                            var delta = choices[0].GetProperty("delta");
+                            if (delta.TryGetProperty("content", out var contentElement)) {
+                                var contentText = contentElement.GetString();
+                                if (!string.IsNullOrEmpty(contentText)) {
+                                    contentBuilder.Append(contentText);
+                                    await onContentReceived(contentText);
+                                }
+                            }
+                        }
+                    }
+                    catch (System.Text.Json.JsonException) {
+                        // Skip malformed JSON lines
+                        continue;
+                    }
+                }
+            }
+
+            await onComplete(null);
+            _logger.LogDebug("OpenAI conversation streaming completed");
+        }
+
+        private async Task InitiatePerplexityConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
+            try {
+                _logger.LogDebug("Starting Perplexity conversation");
+                
+                // Get the last message as the search query
+                var lastMessage = messages.LastOrDefault();
+                if (lastMessage == null || string.IsNullOrEmpty(lastMessage.Content)) {
+                    await onComplete(new ArgumentException("No valid query provided"));
+                    return;
+                }
+
+                var searchQuery = lastMessage.Content;
+                
+                // Create Perplexity search request
+                var searchRequest = new PerplexitySearchRequest 
+                { 
+                    Query = searchQuery,
+                    SearchRecencyFilter = "month",
+                    SearchMode = "comprehensive",
+                    ShowThinking = false
+                };
+                
+                // Call Perplexity service
+                var searchResult = await _perplexityService.SearchAsync(searchRequest);
+                
+                if (!string.IsNullOrEmpty(searchResult.Result)) {
+                    // Stream the content back
+                    await onContentReceived(searchResult.Result);
+                    
+                    // Add sources if available
+                    if (searchResult.Sources != null && searchResult.Sources.Any()) {
+                        var sourcesText = "\n\n**Sources:**\n" + string.Join("\n", searchResult.Sources.Select((s, i) => $"{i + 1}. {s}"));
+                        await onContentReceived(sourcesText);
+                    }
+                } else {
+                    var errorMessage = "Perplexity search failed: No results returned";
+                    await onContentReceived(errorMessage);
+                }
+                
+                await onComplete(null);
+                _logger.LogDebug("Perplexity conversation completed");
+            }
+            catch (Exception ex) {
+                _logger.LogError(ex, "Error during Perplexity conversation");
+                await onComplete(ex);
+            }
+        }
+
+        private async Task InitiatePerplexityStreamConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete) {
+            // Always use sonar-reasoning model for Perplexity API regardless of input model name
+            var requestBody = new {
+                model = "sonar-reasoning",
+                messages = messages.Select(m => new { role = m.Role.ToLower(), content = m.Content }).ToArray(),
+                stream = true
+            };
+
+            var options = new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower
+            };
+            var json = System.Text.Json.JsonSerializer.Serialize(requestBody, options);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.perplexity.ai/chat/completions")
+            {
+                Content = content
+            };
+            var apiKey = _configuration["Perplexity:ApiKey"];
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                _logger.LogWarning("Perplexity API key not found. Returning a mock response.");
+                await onContentReceived("Perplexity API key is not configured. Please add it to your settings to use this model.");
+                await onComplete(null);
+                return;
+            }
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+            try
+            {
+                var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
+
+                using var stream = await response.Content.ReadAsStreamAsync();
+                using var reader = new StreamReader(stream);
+
+                while (!reader.EndOfStream)
+                {
+                    var line = await reader.ReadLineAsync();
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+
+                    if (line.StartsWith("data: "))
+                    {
+                        var data = line.Substring(6);
+                        if (data == "[DONE]")
+                        {
+                            break;
+                        }
+
+                        try
+                        {
+                            using var jsonDoc = System.Text.Json.JsonDocument.Parse(data);
+                            var choices = jsonDoc.RootElement.GetProperty("choices");
+                            if (choices.GetArrayLength() > 0)
+                            {
+                                var delta = choices[0].GetProperty("delta");
+                                if (delta.TryGetProperty("content", out var contentElement))
+                                {
+                                    var contentText = contentElement.GetString();
+                                    if (!string.IsNullOrEmpty(contentText))
+                                    {
+                                        await onContentReceived(contentText);
+                                    }
+                                }
+                            }
+                        }
+                        catch (System.Text.Json.JsonException ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to parse Perplexity stream data: {Data}", data);
+                        }
+                    }
+                }
+                await onComplete(null);
+                _logger.LogDebug("Perplexity conversation streaming completed.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during Perplexity conversation streaming.");
+                await onComplete(ex);
+            }
+        }
+
+        private async Task InitiateAzureConversationAsync(string model, ICollection<NotT3Message> messages, Func<string, ValueTask> onContentReceived, Func<Exception?, ValueTask> onComplete)
+        {
+            if (_azureClient == null)
+            {
+                throw new InvalidOperationException("Azure OpenAI client is not initialized");
+            }
+
+            var chatClient = _azureClient.GetChatClient(model);
+            var chatMessages = messages.Select(m => CreateAzureChatMessage(m.Role, m.Content)).ToList();
+
+            var response = chatClient.CompleteChatStreamingAsync(chatMessages);
+            var contentBuilder = new StringBuilder();
+
+            await foreach (var update in response)
+            {
+                if (update.ContentUpdate.Count > 0)
+                {
+                    var content = string.Join("", update.ContentUpdate.Select(c => c.Text ?? ""));
+                    if (!string.IsNullOrEmpty(content))
+                    {
+                        contentBuilder.Append(content);
+                        await onContentReceived(content);
+                    }
+                }
+            }
+
+            await onComplete(null);
+            _logger.LogDebug("Azure OpenAI conversation streaming completed");
+        }
+
+        public async Task InitiateTitleAssignment(string initialMessage, Func<string, ValueTask> onComplete) {
             if (_titleModel is null) {
                 _logger.LogWarning("Title model is not configured, skipping title assignment");
                 return;
             }
 
-            _logger.LogInformation("Initiating title assignment with model: {Model}", _titleModel);
-            try {
-                var convo = _api.Chat.CreateConversation(_titleModel);
-                convo.AppendMessage(ChatMessageRoles.System, "You are an expert chat title generator. Your task is to analyze a user's initial chat message (or the first 500 characters if it's very long) and provide a concise, descriptive, and engaging title for that chat. The title should clearly reflect the primary topic or purpose of the conversation. Output only the title, no more than 6 words. Do not treat the message as information about this - e.g., if the user write 'Test', he isn't testing the title generator.");
-                convo.AppendMessage(ChatMessageRoles.User, initialMessage[..Math.Min(500, initialMessage.Length)]);
-                var response = await convo.GetResponseRich();
-                _logger.LogInformation("Title assignment completed: {Title}", response.Text);
+            _logger.LogDebug("Initiating title assignment with model: {Model}, provider: {Provider}", 
+                _titleModel, _useOpenAi ? "OpenAI" : "Azure OpenAI");
 
-                await onComplete.Invoke(response);
+            try {
+                if (_useOpenAi) {
+                    await InitiateOpenAiTitleAssignmentAsync(initialMessage, onComplete);
+                }
+                else {
+                    await InitiateAzureTitleAssignmentAsync(initialMessage, onComplete);
+                }
             }
             catch (Exception ex) {
                 _logger.LogError(ex, "Error during title assignment");
             }
+        }
+
+        private async Task InitiateOpenAiTitleAssignmentAsync(string initialMessage, Func<string, ValueTask> onComplete) {
+            var requestBody = new {
+                model = _titleModel,
+                messages = new[] {
+                    new { role = "system", content = "You are an expert chat title generator. Your task is to analyze a user's initial chat message (or the first 500 characters if it's very long) and provide a concise, descriptive, and engaging title for that chat. The title should clearly reflect the primary topic or purpose of the conversation. Output only the title, no more than 6 words. Do not treat the message as information about this - e.g., if the user write 'Test', he isn't testing the title generator." },
+                    new { role = "user", content = initialMessage[..Math.Min(500, initialMessage.Length)] }
+                },
+                max_tokens = 20
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.PostAsync("https://api.openai.com/v1/chat/completions", content);
+            response.EnsureSuccessStatusCode();
+
+            var responseJson = await response.Content.ReadAsStringAsync();
+            using var jsonDoc = System.Text.Json.JsonDocument.Parse(responseJson);
+            var choices = jsonDoc.RootElement.GetProperty("choices");
+            if (choices.GetArrayLength() > 0) {
+                var title = choices[0].GetProperty("message").GetProperty("content").GetString() ?? "New Chat";
+                _logger.LogDebug("OpenAI title assignment completed: {Title}", title);
+                await onComplete(title);
+            }
+        }
+
+        private async Task InitiateAzureTitleAssignmentAsync(string initialMessage, Func<string, ValueTask> onComplete) {
+            if (_azureClient == null) {
+                throw new InvalidOperationException("Azure OpenAI client is not initialized");
+            }
+
+            var chatClient = _azureClient.GetChatClient(_titleModel!);
+            var messages = new List<OpenAI.Chat.ChatMessage>
+            {
+                OpenAI.Chat.ChatMessage.CreateSystemMessage("You are an expert chat title generator. Your task is to analyze a user's initial chat message (or the first 500 characters if it's very long) and provide a concise, descriptive, and engaging title for that chat. The title should clearly reflect the primary topic or purpose of the conversation. Output only the title, no more than 6 words. Do not treat the message as information about this - e.g., if the user write 'Test', he isn't testing the title generator."),
+                OpenAI.Chat.ChatMessage.CreateUserMessage(initialMessage[..Math.Min(500, initialMessage.Length)])
+            };
+
+            var response = await chatClient.CompleteChatAsync(messages);
+            var title = response.Value.Content[0].Text;
+            _logger.LogDebug("Azure title assignment completed: {Title}", title);
+
+            await onComplete(title);
+        }
+
+        private static OpenAI.Chat.ChatMessage CreateAzureChatMessage(string role, string content) {
+            return role.ToLower() switch {
+                "user" => OpenAI.Chat.ChatMessage.CreateUserMessage(content),
+                "assistant" => OpenAI.Chat.ChatMessage.CreateAssistantMessage(content),
+                "system" => OpenAI.Chat.ChatMessage.CreateSystemMessage(content),
+                _ => throw new ArgumentException($"Unknown role: {role}", nameof(role))
+            };
         }
     }
     #endregion
 
     #region Services/StreamingService.cs
     public class StreamingService {
-        private readonly TornadoService _tornadoService;
+        private readonly IOpenAiService _openAiService;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IMemoryCache _memoryCache;
         private readonly ILogger<StreamingService> _logger;
-        public StreamingService(TornadoService tornadoService, IServiceScopeFactory scopeFactory, IMemoryCache memoryCache, ILogger<StreamingService> logger) {
-            _tornadoService = tornadoService;
+        public StreamingService(IOpenAiService openAiService, IServiceScopeFactory scopeFactory, IMemoryCache memoryCache, ILogger<StreamingService> logger) {
+            _openAiService = openAiService;
             _scopeFactory = scopeFactory;
             _memoryCache = memoryCache;
             _logger = logger;
@@ -377,41 +880,42 @@ namespace NotT3ChatBackend.Services {
             var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
             var convo = await dbContext.GetConversationAsync(convoId, user);
 
-            await _tornadoService.InitiateConversationAsync(model, messages, new ExtendedChatStreamEventHandler() {
-                MessagePartHandler = async (messagePart) => {
+            await _openAiService.InitiateConversationAsync(model, messages,
+                onContentReceived: async (content) => {
                     await streamingMessage.Semaphore.WaitAsync();
                     try {
-                        streamingMessage.SbMessage.Append(messagePart.Text);
-                        await hubContext.Clients.Group(convoId).SendAsync("NewAssistantPart", convoId, messagePart.Text);
+                        streamingMessage.SbMessage.Append(content);
+                        await hubContext.Clients.Group(convoId).SendAsync("NewAssistantPart", convoId, content);
                     }
                     finally {
                         streamingMessage.Semaphore.Release();
                     }
                 },
-                OnFinished = async (data) => {
-                    _logger.LogInformation("Assistant message completed for conversation: {ConversationId}", convoId);
-                    await hubContext.Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, null);
+                onComplete: async (error) => {
+                    if (error == null) {
+                        _logger.LogDebug("Assistant message completed for conversation: {ConversationId}", convoId);
+                        await hubContext.Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, null);
 
-                    assistantMsg.Content = streamingMessage.SbMessage.ToString();
-                    dbContext.Messages.Add(assistantMsg);
-                    convo.IsStreaming = false;
-                    await dbContext.SaveChangesAsync();
-                    _logger.LogInformation("Assistant message saved to database");
+                        assistantMsg.Content = streamingMessage.SbMessage.ToString();
+                        dbContext.Messages.Add(assistantMsg);
+                        convo.IsStreaming = false;
+                        await dbContext.SaveChangesAsync();
+                        _logger.LogDebug("Assistant message saved to database");
 
-                    _memoryCache.Set(convoId, streamingMessage, TimeSpan.FromMinutes(1));
-                },
-                ExceptionOccurredHandler = async (ex) => {
-                    _logger.LogError(ex, "Error during streaming for conversation: {ConversationId}", convoId);
-                    await hubContext.Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, ex.Message);
+                        _memoryCache.Set(convoId, streamingMessage, TimeSpan.FromMinutes(1));
+                    }
+                    else {
+                        _logger.LogError(error, "Error during streaming for conversation: {ConversationId}", convoId);
+                        await hubContext.Clients.Group(convoId).SendAsync("EndAssistantMessage", convoId, error.Message);
 
-                    assistantMsg.Content = streamingMessage.SbMessage.ToString();
-                    assistantMsg.FinishError = ex.Message;
-                    dbContext.Messages.Add(assistantMsg);
-                    convo.IsStreaming = false;
-                    await dbContext.SaveChangesAsync();
-                    _memoryCache.Remove(convoId);
-                }
-            });
+                        assistantMsg.Content = streamingMessage.SbMessage.ToString();
+                        assistantMsg.FinishError = error.Message;
+                        dbContext.Messages.Add(assistantMsg);
+                        convo.IsStreaming = false;
+                        await dbContext.SaveChangesAsync();
+                        _memoryCache.Remove(convoId);
+                    }
+                });
         }
 
         internal async Task StreamTitle(string convoId, NotT3Message userMsg, NotT3User user) {
@@ -420,16 +924,239 @@ namespace NotT3ChatBackend.Services {
             var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<ChatHub>>();
             var convo = await dbContext.GetConversationAsync(convoId, user);
 
-            await _tornadoService.InitiateTitleAssignment(userMsg.Content, async response => {
-                string title = response.Text[..Math.Min(40, response.Text.Length)]; // ~6 words
-                convo.Title = title;
+            await _openAiService.InitiateTitleAssignment(userMsg.Content, async title => {
+                string finalTitle = title[..Math.Min(40, title.Length)]; // ~6 words
+                convo.Title = finalTitle;
                 await dbContext.SaveChangesAsync();
                 await hubContext.Clients.Group(user.Id).SendAsync("ChatTitle", convo.Id, convo.Title);
             });
         }
     }
+    #endregion
+    
+    #region Services/PerplexityService.cs
+    public interface IPerplexityService
+    {
+        Task<PerplexityResponse> SearchAsync(PerplexitySearchRequest request);
+        Task<PerplexityResponse> DeepResearchAsync(PerplexityDeepResearchRequest request);
+    }
+
+    public class PerplexityService : IPerplexityService
+    {
+        private readonly ILogger<PerplexityService> _logger;
+        private readonly HttpClient _httpClient;
+        private readonly IConfiguration _configuration;
+
+        public PerplexityService(ILogger<PerplexityService> logger, HttpClient httpClient, IConfiguration configuration)
+        {
+            _logger = logger;
+            _httpClient = httpClient;
+            _configuration = configuration;
+        }
+
+        public async Task<PerplexityResponse> SearchAsync(PerplexitySearchRequest request)
+        {
+            try
+            {
+                _logger.LogDebug("Performing Perplexity search for query: {Query}", request.Query);
+
+                // Check if we have a valid API key
+                var apiKey = _configuration["Perplexity:ApiKey"];
+                if (string.IsNullOrEmpty(apiKey))
+                {
+                    _logger.LogWarning("No valid Perplexity API key configured, returning demo response");
+                    return new PerplexityResponse
+                    {
+                        Result = $"✅ SEARCH ENDPOINT IS WORKING! 🎉\n\nQuery received: '{request.Query}'\n\nTo get real AI responses:\n1. Get API key from https://perplexity.ai/account/api\n2. Add it to appsettings.Development.json\n3. Restart server\n\nThe integration is ready for production!",
+                        Sources = new List<string> { "https://docs.perplexity.ai/getting-started/quickstart" },
+                        Cost = 0.0m
+                    };
+                }
+
+                // Use direct Perplexity API
+                var result = await CallPerplexityApiAsync(request.Query, request.SearchRecencyFilter);
+                
+                _logger.LogDebug("Perplexity search completed successfully");
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error performing Perplexity search");
+                return new PerplexityResponse
+                {
+                    Result = $"Error: {ex.Message}"
+                };
+            }
+        }
+
+        private async Task<PerplexityResponse> CallPerplexityApiAsync(string query, string? searchRecencyFilter = null)
+        {
+            try
+            {
+                // Get API key from configuration
+                var apiKey = _configuration["Perplexity:ApiKey"];
+                if (string.IsNullOrEmpty(apiKey))
+                {
+                    throw new InvalidOperationException("Perplexity API key not configured");
+                }
+
+                // Set up request
+                var requestData = new
+                {
+                    model = "sonar-reasoning",
+                    messages = new[]
+                    {
+                        new { role = "system", content = "Be precise and concise." },
+                        new { role = "user", content = query }
+                    },
+                    return_images = false,
+                    return_related_questions = false,
+                    search_recency_filter = searchRecencyFilter ?? "month",
+                    top_p = 0.9,
+                    stream = false
+                };
+
+                var requestJson = System.Text.Json.JsonSerializer.Serialize(requestData, new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower
+                });
+
+                var request = new HttpRequestMessage(HttpMethod.Post, "https://api.perplexity.ai/chat/completions")
+                {
+                    Content = new StringContent(requestJson, System.Text.Encoding.UTF8, "application/json")
+                };
+
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+                // Send request
+                var response = await _httpClient.SendAsync(request);
+                var responseContent = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("Perplexity API error: {StatusCode} - {Content}", response.StatusCode, responseContent);
+                    return new PerplexityResponse
+                    {
+                        Result = $"API Error: {response.StatusCode} - {responseContent}"
+                    };
+                }
+
+                // Parse response
+                var apiResponse = System.Text.Json.JsonSerializer.Deserialize<PerplexityApiResponse>(responseContent, new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower
+                });
+
+                _logger.LogDebug("Raw API Response: {Response}", responseContent);
+
+                if (apiResponse?.Choices?.Length > 0)
+                {
+                    var choice = apiResponse.Choices[0];
+                    var content = choice.Message.Content ?? "No response content";
+                    
+                    // Extract sources from search_results
+                    var sources = new List<string>();
+                    
+                    // Get sources from search_results if available
+                    if (apiResponse.SearchResults?.Any() == true)
+                    {
+                        foreach (var result in apiResponse.SearchResults)
+                        {
+                            if (!string.IsNullOrEmpty(result.Url))
+                            {
+                                sources.Add(result.Url);
+                            }
+                        }
+                    }
+                    
+                    // Also try to get citations from the message (fallback)
+                    if (!sources.Any() && choice.Message.Citations?.Any() == true)
+                    {
+                        sources.AddRange(choice.Message.Citations);
+                    }
+                    
+                    // If we still don't have sources, extract citation count from text
+                    if (!sources.Any())
+                    {
+                        var citationMatches = System.Text.RegularExpressions.Regex.Matches(content, @"\[(\d+)\]");
+                        if (citationMatches.Count > 0)
+                        {
+                            sources.Add($"Citations embedded in text: {citationMatches.Count} references");
+                        }
+                    }
+                    
+                    return new PerplexityResponse
+                    {
+                        Result = content,
+                        Sources = sources.Any() ? sources : null,
+                        Cost = CalculateCost(apiResponse.Usage)
+                    };
+                }
+
+                return new PerplexityResponse
+                {
+                    Result = "No response received from Perplexity API"
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error calling Perplexity API");
+                throw;
+            }
+        }
+
+        private decimal CalculateCost(PerplexityUsage? usage)
+        {
+            if (usage == null) return 0;
+            
+            // Pricing for sonar model: $1 per 1M tokens for both input and output
+            const decimal costPer1K = 0.001m;  // $0.001 per 1K tokens
+            
+            var totalCost = ((usage.PromptTokens + usage.CompletionTokens) / 1000m) * costPer1K;
+            
+            return totalCost;
+        }
+
+        public async Task<PerplexityResponse> DeepResearchAsync(PerplexityDeepResearchRequest request)
+        {
+            try
+            {
+                _logger.LogDebug("Performing Perplexity deep research for query: {Query}", request.Query);
+
+                // Check if we have a valid API key
+                var apiKey = _configuration["Perplexity:ApiKey"];
+                if (string.IsNullOrEmpty(apiKey))
+                {
+                    _logger.LogWarning("No valid Perplexity API key configured, returning demo response");
+                    return new PerplexityResponse
+                    {
+                        Result = $"✅ DEEP RESEARCH ENDPOINT IS WORKING! 🎉\n\nQuery received: '{request.Query}'\n\nThis would perform comprehensive research with detailed analysis.\n\nTo get real AI responses, add a valid Perplexity API key to configuration.",
+                        Sources = new List<string> { "https://docs.perplexity.ai/getting-started/models/models/sonar-deep-research" },
+                        Cost = 0.0m
+                    };
+                }
+
+                // For deep research, use a more detailed prompt and longer model
+                var result = await CallPerplexityApiAsync(
+                    $"Provide comprehensive research on: {request.Query}. Include detailed analysis, multiple perspectives, and relevant context.",
+                    "month"
+                );
+
+                _logger.LogDebug("Perplexity deep research completed successfully");
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error performing Perplexity deep research");
+                return new PerplexityResponse
+                {
+                    Result = $"Error: {ex.Message}"
+                };
+            }
+        }
+    }
+    #endregion
 }
-#endregion
 
 #region Hubs/ChatHub.cs
 namespace NotT3ChatBackend.Hubs {
@@ -449,14 +1176,31 @@ namespace NotT3ChatBackend.Hubs {
         }
 
         public override async Task OnConnectedAsync() {
+            _logger.LogDebug("SignalR Method Called: OnConnectedAsync - ConnectionId: {ConnectionId}", Context.ConnectionId);
+            
             var user = await _userManager.GetUserAsync(Context.User ?? throw new UnauthorizedAccessException());
-            _logger.LogInformation("User {UserId} connected", user.Id);
-            await Groups.AddToGroupAsync(Context.ConnectionId, user.Id);
+            if (user != null) {
+                _logger.LogDebug("User {UserId} connected", user.Id);
+                await Groups.AddToGroupAsync(Context.ConnectionId, user.Id);
+            }
             await base.OnConnectedAsync();
         }
 
+        public override async Task OnDisconnectedAsync(Exception? exception) {
+            _logger.LogDebug("SignalR Method Called: OnDisconnectedAsync - ConnectionId: {ConnectionId}, Exception: {Exception}", 
+                Context.ConnectionId, exception?.Message);
+            
+            if (Context.Items.TryGetValue(Context.ConnectionId, out var convoIdObj)) {
+                _logger.LogDebug("User {ConnectionId} disconnected from conversation: {ConversationId}", 
+                    Context.ConnectionId, convoIdObj?.ToString() ?? "unknown");
+            }
+            
+            await base.OnDisconnectedAsync(exception);
+        }
+
         public async Task ChooseChat(string convoId) { 
-            _logger.LogInformation("User connecting to conversation: {ConversationId}", convoId);
+            _logger.LogDebug("SignalR Method Called: ChooseChat - ConversationId: {ConversationId}, ConnectionId: {ConnectionId}", 
+                convoId, Context.ConnectionId);
 
             // It must be an existing conversation - retrieve it and send the existing messages
             var user = await _userManager.GetUserAsync(Context.User ?? throw new UnauthorizedAccessException());
@@ -466,10 +1210,10 @@ namespace NotT3ChatBackend.Hubs {
             // Leave previous chat group (if any)
             if (Context.Items.TryGetValue(Context.ConnectionId, out var prevConvoId)) { 
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, prevConvoId!.ToString()!);
-                _logger.LogInformation("User {UserId} left chat {PreviousChatId}", user!.Id, prevConvoId!.ToString());
+                _logger.LogDebug("User {UserId} left chat {PreviousChatId}", user!.Id, prevConvoId!.ToString());
             }
 
-            _logger.LogInformation("Sending conversation history with {MessageCount} messages", conversation.Messages.Count);
+            _logger.LogDebug("Sending conversation history with {MessageCount} messages", conversation.Messages.Count);
             // Send out the messages
             await Clients.Client(Context.ConnectionId).SendAsync("ConversationHistory", convoId, conversation.Messages.OrderBy(m => m.Index).Select(m => new NotT3MessageDTO(m)).ToList());
 
@@ -481,14 +1225,14 @@ namespace NotT3ChatBackend.Hubs {
             // TODO: consider race condition?
             // Check if we're in the middle of a message
             if (conversation.IsStreaming) {
-                _logger.LogInformation("Conversation is currently streaming, checking for existing message");
+                _logger.LogDebug("Conversation is currently streaming, checking for existing message");
                 if (_memoryCache.TryGetValue(convoId, out StreamingMessage? currentMsg)) {
                     await currentMsg!.Semaphore.WaitAsync();
                     try {
                         await Clients.Client(Context.ConnectionId).SendAsync("BeginAssistantMessage", convoId, new NotT3MessageDTO(currentMsg.Message));
                         await Clients.Client(Context.ConnectionId).SendAsync("NewAssistantPart", convoId, currentMsg.SbMessage.ToString());
                         await AddToGroup();
-                        _logger.LogInformation("User joined streaming conversation");
+                        _logger.LogDebug("User joined streaming conversation");
                     }
                     finally {
                         currentMsg.Semaphore.Release();
@@ -497,20 +1241,23 @@ namespace NotT3ChatBackend.Hubs {
             }
             else {
                 await AddToGroup();
-                _logger.LogInformation("User joined conversation group");
+                _logger.LogDebug("User joined conversation group");
             }
 
             await base.OnConnectedAsync();
         }
 
         public async Task NewMessage(string model, string message) {
+            _logger.LogDebug("SignalR Method Called: NewMessage - Model: {Model}, MessageLength: {MessageLength}, ConnectionId: {ConnectionId}", 
+                model, message?.Length ?? 0, Context.ConnectionId);
+            
             if (!Context.Items.TryGetValue(Context.ConnectionId, out var convoIdObj)) {
                 _logger.LogWarning("User attempted to send a message without being in a conversation group");
                 return;
             }
 
             string convoId = convoIdObj!.ToString()!;
-            _logger.LogInformation("New message received for conversation: {ConversationId}, model: {Model}", convoId, model);
+            _logger.LogDebug("New message received for conversation: {ConversationId}, model: {Model}", convoId, model);
 
             var user = await _userManager.GetUserAsync(Context.User ?? throw new NotImplementedException());
             var convo = await _dbContext.GetConversationAsync(convoId, user!);
@@ -523,36 +1270,36 @@ namespace NotT3ChatBackend.Hubs {
             // Load in the messages
             await _dbContext.Entry(convo).Collection(c => c.Messages).LoadAsync();
             convo.Messages.Sort((a, b) => a.Index.CompareTo(b.Index));
-            _logger.LogInformation("Loaded {MessageCount} existing messages for conversation", convo.Messages.Count);
+            _logger.LogDebug("Loaded {MessageCount} existing messages for conversation", convo.Messages.Count);
 
             // Add in the new one
             var userMsg = new NotT3Message() {
                 Index = convo.Messages.Count,
-                Role = ChatMessageRoles.User,
-                Content = message,
+                Role = "user",
+                Content = message ?? string.Empty,
                 Timestamp = DateTime.UtcNow,
                 ConversationId = convo.Id,
                 UserId = user!.Id
             };
             _dbContext.Messages.Add(userMsg);
-            _logger.LogInformation("Added user message to conversation: {ConversationId}", convoId);
+            _logger.LogDebug("Added user message to conversation: {ConversationId}", convoId);
 
             // First message? Get a title
             if (userMsg.Index == 0) {
-                _logger.LogInformation("First message in conversation, generating title asynchronously");
+                _logger.LogDebug("First message in conversation, generating title asynchronously");
                 _ = _streamingService.StreamTitle(convoId, userMsg, user);
             }
 
             convo.IsStreaming = true;
             await _dbContext.SaveChangesAsync();
-            _logger.LogInformation("Conversation marked as streaming and changes saved");
+            _logger.LogDebug("Conversation marked as streaming and changes saved");
 
             // Send out the user & assistant messages
             await Clients.Group(convoId).SendAsync("UserMessage", convo.Id, new NotT3MessageDTO(userMsg));
 
             var assistantMsg = new NotT3Message() {
                 Index = convo.Messages.Count,
-                Role = ChatMessageRoles.Assistant,
+                Role = "assistant",
                 Content = "",
                 Timestamp = DateTime.UtcNow,
                 ConversationId = convo.Id,
@@ -563,26 +1310,29 @@ namespace NotT3ChatBackend.Hubs {
         }
 
         public async Task RegenerateMessage(string model, string messageId) {
+            _logger.LogDebug("SignalR Method Called: RegenerateMessage - Model: {Model}, MessageId: {MessageId}, ConnectionId: {ConnectionId}", 
+                model, messageId, Context.ConnectionId);
+            
             if (!Context.Items.TryGetValue(Context.ConnectionId, out var convoIdObj)) {
                 _logger.LogWarning("User attempted to regenerated a message without being in a conversation group");
                 return;
             }
 
             string convoId = convoIdObj!.ToString()!;
-            _logger.LogInformation("Gegenerated message received for conversation: {ConversationId}, model: {Model}, messageId: {MessageId}", convoId, model, messageId);
+            _logger.LogDebug("Gegenerated message received for conversation: {ConversationId}, model: {Model}, messageId: {MessageId}", convoId, model, messageId);
 
             var user = await _userManager.GetUserAsync(Context.User ?? throw new NotImplementedException());
             var convo = await _dbContext.GetConversationAsync(convoId, user!);
 
             if (convo.IsStreaming) {
-                Log.Warning("Attempted to send message to streaming conversation: {ConversationId}", convoId);
+                _logger.LogWarning("Attempted to send message to streaming conversation: {ConversationId}", convoId);
                 throw new BadHttpRequestException("Conversation is already streaming, can't create a new message");
             }
 
             // Load in the messages
             await _dbContext.Entry(convo).Collection(c => c.Messages).LoadAsync();
             convo.Messages.Sort((a, b) => a.Index.CompareTo(b.Index));
-            _logger.LogInformation("Loaded {MessageCount} existing messages for conversation", convo.Messages.Count);
+            _logger.LogDebug("Loaded {MessageCount} existing messages for conversation", convo.Messages.Count);
 
             // Regenerating means deleting all the messages up until then
             var idxOfMessage = convo.Messages.FindIndex(m => m.Id == messageId);
@@ -591,18 +1341,18 @@ namespace NotT3ChatBackend.Hubs {
                 throw new KeyNotFoundException($"Message {messageId} not found in conversation {convoId}");
             }
             var lastMessage = convo.Messages[idxOfMessage];
-            if (lastMessage.Role != ChatMessageRoles.Assistant) {
+            if (lastMessage.Role != "assistant") {
                 _logger.LogWarning("Attempted to regenerate a non-assistant message, ignoring: {MessageId} in conversation {ConversationId}", messageId, convoId);
                 return; 
             }
 
             // Remove the old messages
-            _logger.LogInformation("Regenerating message, removing {Count} messages from index {Index}", convo.Messages.Count - idxOfMessage, idxOfMessage);
+            _logger.LogDebug("Regenerating message, removing {Count} messages from index {Index}", convo.Messages.Count - idxOfMessage, idxOfMessage);
             _dbContext.RemoveRange(convo.Messages.Skip(idxOfMessage));
             convo.Messages.RemoveRange(idxOfMessage, convo.Messages.Count - idxOfMessage);
 
             // Zero out the contents of the last message
-            _logger.LogInformation("Zeroing out content of last message with ID: {MessageId}", lastMessage.Id);
+            _logger.LogDebug("Zeroing out content of last message with ID: {MessageId}", lastMessage.Id);
             lastMessage.Content = "";
             lastMessage.FinishError = null;
             lastMessage.ChatModel = model;
@@ -610,13 +1360,16 @@ namespace NotT3ChatBackend.Hubs {
 
             convo.IsStreaming = true;
             await _dbContext.SaveChangesAsync();
-            _logger.LogInformation("Conversation marked as streaming and changes saved");
+            _logger.LogDebug("Conversation marked as streaming and changes saved");
             await GenerateAssistantMessage(model, convoId, convo, lastMessage, user!);
         }
 
         private async Task GenerateAssistantMessage(string model, string convoId, NotT3Conversation convo, NotT3Message assistantMsg, NotT3User user) {
+            _logger.LogDebug("SignalR Helper Method Called: GenerateAssistantMessage - Model: {Model}, ConversationId: {ConversationId}, AssistantMessageId: {AssistantMessageId}, UserId: {UserId}", 
+                model, convoId, assistantMsg.Id, user.Id);
+            
             await Clients.Group(convoId).SendAsync("BeginAssistantMessage", convoId, new NotT3MessageDTO(assistantMsg));
-            _logger.LogInformation("Starting assistant response with ID: {ResponseId}", assistantMsg.Id);
+            _logger.LogDebug("Starting assistant response with ID: {ResponseId}", assistantMsg.Id);
 
             var streamingMessage = new StreamingMessage(new StringBuilder(),assistantMsg, new SemaphoreSlim(1));
             _memoryCache.Set(convoId, streamingMessage, TimeSpan.FromMinutes(5)); // Max expiration of 5 minutes
@@ -636,13 +1389,13 @@ namespace NotT3ChatBackend.Data {
         internal DbSet<NotT3Message> Messages { get; init; }
 
         internal async Task<NotT3Conversation> CreateConversationAsync(NotT3User user) {
-            logger.LogInformation("Creating new conversation for user: {UserId}", user.Id);
+            logger.LogDebug("Creating new conversation for user: {UserId}", user.Id);
             var convo = new NotT3Conversation() {
                 UserId = user.Id
             };
             await Conversations.AddAsync(convo);
             await SaveChangesAsync();
-            logger.LogInformation("Conversation created with ID: {ConversationId}", convo.Id);
+            logger.LogDebug("Conversation created with ID: {ConversationId}", convo.Id);
             return convo;
         }
 
@@ -676,13 +1429,18 @@ namespace NotT3ChatBackend.Models {
     public class NotT3Conversation {
         [Key]
         public string Id { get; set; } = Guid.NewGuid().ToString();
+        
         public DateTime CreatedAt { get; } = DateTime.UtcNow;
+        
         public string Title { get; set; } = "New Chat";
+        
         public required string UserId { get; set; }
+        
         public bool IsStreaming { get; set; } = false;
 
         // Navigators
         public NotT3User? User { get; set; }
+        
         public List<NotT3Message> Messages { get; set; } = [];
     }
     #endregion
@@ -691,18 +1449,25 @@ namespace NotT3ChatBackend.Models {
     public class NotT3Message {
         [Key]
         public string Id { get; set; } = Guid.NewGuid().ToString();
+
         public required int Index { get; set; }
-        public required ChatMessageRoles Role { get; set; }
+
+        public required string Role { get; set; }
+
         public required string Content { get; set; }
+
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+
         public string? ChatModel { get; set; }
+
         public string? FinishError { get; set; }
 
         public required string ConversationId { get; set; }
+
         public required string UserId { get; set; }
 
-        // Navigators
         public NotT3Conversation? Conversation { get; set; }
+
         public NotT3User? User { get; set; }
     }
     #endregion
@@ -725,22 +1490,98 @@ namespace NotT3ChatBackend.DTOs {
     public record ForkChatRequestDTO(string ConversationId, string MessageId);
     #endregion
 
-    #region DTOs/ChatModelDTO.cs
-    public record ChatModelDTO(string Name, string Provider) {
-        public ChatModelDTO(ChatModel model) : this(model.Name, model.Provider.ToString()) {
-            // This is a simple DTO, so we don't need to do anything else
-        }
+    #region DTOs/ChatModelDto.cs
+    public record ChatModelDto(string Name, string Provider) {
+        // Simple DTO for chat models
     }
+    #endregion
+
+    #region DTOs/PerplexityDTOs.cs
+    public class PerplexitySearchRequest
+    {
+        public string Query { get; set; } = string.Empty;
+        public string? SearchRecencyFilter { get; set; }
+        
+        public string? SearchDomainFilter { get; set; }
+        public string? SearchMode { get; set; }
+        public bool? ShowThinking { get; set; }
+    }
+
+    public class PerplexityDeepResearchRequest
+    {
+        public string Query { get; set; } = string.Empty;
+        
+        public string? ReasoningEffort { get; set; }
+    }
+
+    public class PerplexityResponse
+    {
+        public string Result { get; set; } = string.Empty;
+        
+        public string? Thinking { get; set; }
+        public List<string>? Sources { get; set; }
+        public decimal? Cost { get; set; }
+    }
+
+    // Internal API response models
+    public class PerplexityApiResponse
+    {
+        public string Id { get; set; } = string.Empty;
+        
+        public string Model { get; set; } = string.Empty;
+        
+        public long Created { get; set; }
+        public PerplexityUsage? Usage { get; set; }
+        
+        public string Object { get; set; } = string.Empty;
+        public PerplexityChoice[]? Choices { get; set; }
+        public PerplexitySearchResult[]? SearchResults { get; set; }
+    }
+
+    public class PerplexitySearchResult
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Url { get; set; } = string.Empty;
+        
+        public string Snippet { get; set; } = string.Empty;
+        
+        public string? Date { get; set; }
+        
+        public string? LastUpdated { get; set; }
+    }
+
+    public class PerplexityChoice
+    {
+        public int Index { get; set; }
+        
+        public string FinishReason { get; set; } = string.Empty;
+        public PerplexityMessage Message { get; set; } = new();
+        
+        public PerplexityMessage? Delta { get; set; }
+    }
+
+    public class PerplexityMessage
+    {
+        public string Role { get; set; } = string.Empty;
+        public string? Content { get; set; }
+        public string[]? Citations { get; set; }
+    }
+
+    public class PerplexityUsage
+    {
+        public int PromptTokens { get; set; }
+        public int CompletionTokens { get; set; }
+        
+        public int TotalTokens { get; set; }
+    }
+    #endregion
+
+    #region DTOs/RegisterUserRequestDTO.cs
+    public record RegisterUserRequestDto(string Username, string UserEmail, string Password);
     #endregion
 }
 
 namespace NotT3ChatBackend.Utils {
-    #region Utils/ExtendedChatStreamEventHandler.cs
-    public class ExtendedChatStreamEventHandler : ChatStreamEventHandler {
-        public Func<Exception, ValueTask>? ExceptionOccurredHandler { get; set; }
-    }
-    #endregion
-
     #region Utils/StreamingMessage.cs
     public record StreamingMessage(StringBuilder SbMessage, NotT3Message Message, SemaphoreSlim Semaphore);
     #endregion

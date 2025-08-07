@@ -1,18 +1,35 @@
 /* ChatSidebar styles */
 
+.chat-sidebar {
+  margin: 0;
+  padding: 0;
+}
+
 .chat-sidebar .drawer-content {
-  width: 300px;
+  width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
+  position: relative;
+  transition: width 0.3s ease;
+  margin: 0;
+  padding: 0;
+  /* Touch scroll support */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  /* Ensure proper flex behavior */
+  min-height: 0;
+  overflow: hidden;
 }
 
 .chat-sidebar .sidebar-header {
-  padding: 16px;
+  padding: 0px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.12);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 36px;
+  margin: 0;
 }
 
 .chat-sidebar .header-actions {
@@ -20,18 +37,116 @@
   gap: 8px;
 }
 
-.chat-sidebar .close-button {
-  display: none;
+.chat-sidebar .sidebar-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  height: 100% !important;
+  width: 4px;
+  cursor: ew-resize;
+  background-color: transparent;
+  z-index: 1000;
+  transition: background-color 0.2s ease;
+  -webkit-touch-callout: none; /* Disable touch callout on iOS */
+  -webkit-user-select: none; /* Disable text selection */
+  user-select: none;
+  touch-action: none; /* Prevent default touch behaviors */
 }
 
+.chat-sidebar .sidebar-resize-handle:hover {
+  background-color: #1976d2 !important;
+  opacity: 0.8 !important;
+}
+
+.chat-sidebar .sidebar-resize-handle:active {
+  background-color: #1976d2 !important;
+  opacity: 1 !important;
+}
+
+/* Mobile-specific touch improvements */
+@media (max-width: 768px) {
+  .chat-sidebar .sidebar-resize-handle {
+    width: 8px; /* Wider touch target */
+    background-color: rgba(25, 118, 210, 0.1); /* Slight background to show it's touchable */
+  }
+  
+  .chat-sidebar .sidebar-resize-handle:active {
+    background-color: #1976d2 !important;
+    opacity: 0.6 !important;
+  }
+  
+  /* Add subtle visual hint for touch devices */
+  .chat-sidebar .sidebar-resize-handle::after {
+    content: '';
+    position: absolute;
+    right: 2px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2px;
+    height: 20px;
+    background: linear-gradient(to bottom, transparent, #1976d2, transparent);
+    opacity: 0.5; /* More visible */
+    border-radius: 1px;
+  }
+}
+
+/* Collapsed state styles */
+.chat-sidebar .collapsed-chat-list {
+  padding: 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.chat-sidebar .collapsed-new-chat-button {
+  border: 1px solid #1976d2;
+  color: #1976d2;
+}
+
+.chat-sidebar .collapsed-new-chat-button:hover {
+  background-color: #1976d2;
+  color: white;
+}
+
+.chat-sidebar .collapsed-chats {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  /* Minimal scrollbar for all browsers */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  /* Touch scroll support */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+}
+
+.chat-sidebar .collapsed-chat-button.selected {
+  background-color: #1976d2 !important;
+  color: white !important;
+}
+
+/* Mobile and narrow desktop specific styles */
+@media (max-width: 1200px) {
+  .chat-sidebar .sidebar-resize-handle {
+    display: block !important; /* Keep resize handle visible for touch */
+  }
+}
+
+/* Mobile specific styles */
 @media (max-width: 899px) {
-  .chat-sidebar .close-button {
-    display: inline-flex;
+  .chat-sidebar .drawer-content {
+    border-radius: 0 8px 8px 0;
   }
 }
 
 .chat-sidebar .new-chat-section {
-  padding: 16px;
+  padding: 4px;
 }
 
 .chat-sidebar .new-chat-button {
@@ -51,7 +166,73 @@
 
 .chat-sidebar .chat-list-container {
   flex: 1;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(25, 118, 210, 0.5) transparent;
+  /* Touch scroll support */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+  /* Ensure proper height calculation for scrolling */
+  min-height: 0;
+  max-height: calc(100vh - 150px);
+}
+
+/* Custom scrollbar for webkit browsers - only for non-collapsed sidebar */
+.chat-sidebar .chat-list-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-sidebar .chat-list-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-sidebar .chat-list-container::-webkit-scrollbar-thumb {
+  background-color: rgba(25, 118, 210, 0.3);
+  border-radius: 3px;
+  transition: background-color 0.2s ease;
+}
+
+.chat-sidebar .chat-list-container::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(25, 118, 210, 0.6);
+}
+
+/* Minimal scrollbar for collapsed state */
+.chat-sidebar .collapsed-chats::-webkit-scrollbar {
+  width: 1px !important;
+  height: 1px !important;
+}
+
+.chat-sidebar .collapsed-chats::-webkit-scrollbar-track {
+  background: transparent !important;
+  width: 1px !important;
+}
+
+.chat-sidebar .collapsed-chats::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.15) !important;
+  border-radius: 0.5px !important;
+  border: none !important;
+  width: 1px !important;
+}
+
+.chat-sidebar .collapsed-chats::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.3) !important;
+}
+
+.chat-sidebar .collapsed-chats::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+/* Force minimal scrollbar with additional specificity */
+.chat-sidebar.MuiDrawer-root .collapsed-chats::-webkit-scrollbar,
+.chat-sidebar .MuiPaper-root .collapsed-chats::-webkit-scrollbar {
+  width: 1px !important;
+}
+
+.chat-sidebar.MuiDrawer-root .collapsed-chats::-webkit-scrollbar-track,
+.chat-sidebar .MuiPaper-root .collapsed-chats::-webkit-scrollbar-track {
+  background: transparent !important;
 }
 
 .chat-sidebar .loading-container {
@@ -81,7 +262,13 @@
 }
 
 .chat-sidebar .chat-list {
-  padding: 8px;
+  padding: 4px;
+  /* Ensure proper scrolling */
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 100%;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .chat-sidebar .chat-item {
@@ -107,16 +294,31 @@
 .chat-sidebar .chat-content {
   flex: 1;
   min-width: 0;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
 }
 
 .chat-sidebar .chat-actions {
   display: flex;
   opacity: 0;
-  transition: opacity 0.2s;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+  float: right;
+  margin-left: 4px;
+  margin-top: 2px;
+  shape-outside: margin-box;
+}
+
+.chat-sidebar .chat-content::after {
+  content: "";
+  display: table;
+  clear: both;
 }
 
 .chat-sidebar .chat-item:hover .chat-actions {
   opacity: 1;
+  visibility: visible;
 }
 
 .chat-sidebar .delete-button {
@@ -136,43 +338,40 @@
   color: white;
   background-color: rgba(255, 255, 255, 0.1);
 }
-
 .chat-sidebar .chat-title {
   font-weight: 400;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: ellipsis;
   white-space: nowrap;
+  transition: overflow 0.1s ease;
+  padding-right: 8px;
 }
 
 .chat-sidebar .chat-title.selected {
   font-weight: 600;
 }
 
+.chat-sidebar .chat-item:hover .chat-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: calc(100% - 32px);
+  padding-right: 4px;
+}
+
 .chat-sidebar .chat-date {
   opacity: 0.7;
-  font-size: 0.7rem;
+  font-size: 0.6rem;
 }
 
-.chat-sidebar .desktop-drawer .MuiDrawer-paper {
-  box-sizing: border-box;
-  width: 300px;
-  top: 64px;
-  height: calc(100vh - 64px);
+/* Minimize padding for Material-UI ListItemButton components */
+.chat-sidebar .MuiButtonBase-root.MuiListItemButton-root.MuiListItemButton-gutters,
+.chat-sidebar .MuiListItemButton-root.MuiListItemButton-gutters,
+.chat-sidebar .chat-button.MuiButtonBase-root,
+.chat-sidebar .MuiListItemButton-root {
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
+  padding-left: 4px !important;
+  padding-right: 4px !important;
+  min-height: auto !important;
 }
 
-.chat-sidebar .mobile-drawer .MuiDrawer-paper {
-  box-sizing: border-box;
-  width: 300px;
-}
-
-@media (min-width: 900px) {
-  .chat-sidebar .mobile-drawer {
-    display: none;
-  }
-}
-
-@media (max-width: 899px) {
-  .chat-sidebar .desktop-drawer {
-    display: none;
-  }
-}
+/* Remove the desktop/mobile drawer styles as they're no longer needed */

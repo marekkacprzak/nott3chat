@@ -1,0 +1,568 @@
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import {
+  Box,
+  Button,
+  Container,
+  Paper,
+  TextField,
+  Typography,
+  AppBar,
+  Toolbar,
+  Tooltip,
+  IconButton,
+  CircularProgress,
+  useTheme,
+  useMediaQuery,
+} from '@mui/material';
+import {
+  Send as SendIcon,
+  ExitToApp as LogoutIcon,
+  Refresh as RefreshIcon,
+  Wifi as WifiIcon,
+  WifiOff as WifiOffIcon,
+} from '@mui/icons-material';
+import { useSignalR } from '../contexts/SignalRContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useChats } from '../contexts/ChatContext';
+import { chatApi } from '../services/chatApi';
+import ChatMessage from './ChatMessage';
+import ChatSidebar from './ChatSidebar';
+import ModelSelector from './ModelSelector';
+import ThemeSelector from './ThemeSelector';
+import { useMobileKeyboard } from '../hooks/useMobileKeyboard';
+import { useKeyboardPosition } from '../hooks/useKeyboardPosition';
+import { usePreventZoom } from '../hooks/usePreventZoom';
+import './ChatRoom.css';
+
+const ChatRoom = () => {
+  const [messageInput, setMessageInput] = useState('');
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState('');
+  const [selectedModel, setSelectedModel] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { logout } = useAuth();
+  const { addNewChat, chats, hasLoaded } = useChats();
+  const { chatId } = useParams();
+  const navigate = useNavigate();
+  const theme = useTheme();
+  const isNarrowDesktop = useMediaQuery('(max-width: 1200px)');
+  
+  // Mobile keyboard detection and positioning
+  const { isKeyboardOpen, viewportHeight, isMobile } = useMobileKeyboard();
+  const { 
+    inputPosition, 
+    handleInputFocus, 
+    handleInputBlur 
+  } = useKeyboardPosition();
+  
+  // Prevent zoom on mobile input focus
+  const { getInputProps } = usePreventZoom();
+
+  // Always use permanent sidebar, but start collapsed on narrow screens
+  const shouldStartCollapsed = isNarrowDesktop;
+
+  const activeChat = useMemo(() => chats.find(c => c.id == chatId), [chatId, chats]);
+
+  // Use global SignalR connection
+  const { 
+    messages, 
+    sendMessage, 
+    regenerateMessage,
+    isConnected, 
+    isConnecting,
+    currentAssistantMessage, 
+    chooseChat,
+    reconnect 
+  } = useSignalR();
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [scrollToBottom, messages, currentAssistantMessage]);
+
+  // Choose chat when chatId changes
+  useEffect(() => {
+    if (chatId) {
+      chooseChat(chatId).then(() => setIsCreatingChat(false));
+    } else {
+      // When chatId is undefined (navigating to /chat/), clear the chat
+      chooseChat(null);
+    }
+  }, [chatId, chooseChat]);
+
+  useEffect(() => {
+    if (hasLoaded && !activeChat) navigate('/chat');
+  }, [hasLoaded, activeChat, navigate]);
+
+  // Handle mobile keyboard opening - ensure input stays visible
+  useEffect(() => {
+    if (isMobile && isKeyboardOpen) {
+      // Small delay to ensure keyboard is fully open
+      const timer = setTimeout(() => {
+        const inputArea = document.querySelector('.chat-room .input-area') as HTMLElement;
+        if (inputArea) {
+          inputArea.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'end',
+            inline: 'nearest' 
+          });
+        }
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isMobile, isKeyboardOpen]);
+
+  // Update selected model to match the last message's model
+  useEffect(() => {
+    if (messages.length > 0) {
+      // Find the last assistant message with a model
+      const lastAssistantMessage = [...messages]
+        .reverse()
+        .find(msg => msg.type === 'assistant' && msg.chatModel);
+      
+      if (lastAssistantMessage && lastAssistantMessage.chatModel) {
+        setSelectedModel(lastAssistantMessage.chatModel);
+      }
+    }
+  }, [messages]);
+
+  // Effect to send pending message when SignalR connection is established
+  useEffect(() => {
+    if (isConnected && pendingMessage && !isCreatingChat) {
+      const messageToSend = pendingMessage;
+      setPendingMessage('');
+      setMessageInput('');
+      sendMessage(selectedModel, messageToSend);
+    }
+  }, [isConnected, pendingMessage, isCreatingChat, sendMessage, selectedModel]);
+
+  const forkChat = useCallback(async (messageId: string) => {
+    if (!chatId) return;
+    
+    try {
+      const newChatId = await chatApi.forkChat(chatId, messageId);
+      // Create a chat object for addNewChat - it expects a Chat object
+      const now = new Date().toISOString();
+      const newChat = { 
+        id: newChatId, 
+        title: 'New Chat', 
+        createdAt: now,
+        updatedAt: now
+      };
+      addNewChat(newChat);
+      navigate(`/chat/${newChatId}`);
+    } catch (error) {
+      console.error('Error forking chat:', error);
+    }
+  }, [addNewChat, navigate, chatId]); 
+
+  const createNewChatAndSend = useCallback(
+    async (message: string) => {
+      setIsCreatingChat(true);
+      try {
+        const newChatId = await chatApi.createNewChat();
+        // Create a chat object for addNewChat
+        const now = new Date().toISOString();
+        const newChat = { 
+          id: newChatId, 
+          title: 'New Chat', 
+          createdAt: now,
+          updatedAt: now
+        };
+        // Add to chat list
+        addNewChat(newChat);
+        // Set the pending message to send after connection
+        setPendingMessage(message);
+        // Navigate to the new chat
+        navigate(`/chat/${newChatId}`);
+        // Clear input and creating state
+        setMessageInput('');
+      } catch (error) {
+        console.error('Error creating new chat:', error);
+        setIsCreatingChat(false);
+        setPendingMessage('');
+      }
+    },
+    [addNewChat, navigate]
+  );
+
+  const handleSendMessage = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!messageInput.trim()) return;
+
+      if (!chatId) {
+        // No chat exists, create a new one
+        await createNewChatAndSend(messageInput.trim());
+      } else {
+        // Send message to existing chat
+        await sendMessage(selectedModel, messageInput.trim());
+        setMessageInput('');
+      }
+    },
+    [chatId, sendMessage, selectedModel, messageInput, createNewChatAndSend]
+  );
+
+  const handleLogout = useCallback(() => {
+    logout();
+  }, [logout]);
+
+  const handleChatSelect = useCallback(
+    (selectedChatId: string | null) => {
+      if (selectedChatId) {
+        navigate(`/chat/${selectedChatId}`);
+      } else {
+        navigate('/chat');
+      }
+    },
+    [navigate]
+  );
+
+  return (
+    <div className="chat-room">
+      <Box 
+        className="chat-container"
+        sx={{
+          height: isMobile && isKeyboardOpen 
+            ? `${viewportHeight}px` 
+            : '100vh',
+          overflow: 'hidden',
+          position: 'relative',
+          transition: isMobile ? 'height 0.2s ease-in-out' : 'none',
+        }}
+      >
+        <AppBar position="static">
+          <Toolbar sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {/* Left side - Chat Title */}
+            <Typography 
+              variant="h6" 
+              component="div" 
+              className="app-bar-title"
+              sx={{
+                maxWidth: '40%', // 1/5 of the toolbar width
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flex: '0 0 auto' // Don't grow or shrink
+              }}
+              title={chatId && activeChat ? activeChat.title : 'New Chat'} // Show full title on hover
+            >
+              {chatId && activeChat ? activeChat.title : 'New Chat'}
+            </Typography>
+            
+            {/* Right side - Controls */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+              {/* Theme Selector */}
+              <ThemeSelector variant="chip" size="small" />
+              
+              {isConnecting ? (
+                <Tooltip title="Connecting...">
+                  <CircularProgress size={24} color="inherit" />
+                </Tooltip>
+              ) : isConnected ? (
+                <Tooltip title="Connected">
+                  <WifiIcon color="success" />
+                </Tooltip>
+              ) : (
+                <Tooltip title="Disconnected">
+                  <WifiOffIcon color="error" />
+                </Tooltip>
+              )}
+
+            {!isConnected && !isConnecting && (
+              <Tooltip title="Reconnect">
+                <IconButton
+                  color="inherit"
+                  onClick={reconnect}
+                  size="small"
+                >
+                  <RefreshIcon />
+                </IconButton>
+              </Tooltip>
+            )}
+            <Tooltip title="Logout">
+              <IconButton
+                color="inherit"
+                onClick={handleLogout}
+              >
+                <LogoutIcon />
+              </IconButton>
+            </Tooltip>
+            </Box>
+          </Toolbar>
+        </AppBar>
+
+        <Box 
+          className="main-layout" 
+          sx={{ 
+            display: 'flex',
+            height: isMobile && isKeyboardOpen 
+              ? `${viewportHeight - 64}px` // Adjust for keyboard on mobile
+              : 'calc(100vh - 64px)', // Full height minus AppBar
+            marginTop: 0,
+            paddingTop: 0,
+            overflow: 'hidden',
+            transition: isMobile ? 'height 0.2s ease-in-out' : 'none',
+          }}
+        >
+          {/* Chat Sidebar */}
+          <ChatSidebar
+            onChatSelect={handleChatSelect}
+            currentChatId={chatId}
+            shouldStartCollapsed={shouldStartCollapsed}
+          />
+          
+          <Box 
+            className="main-content"
+            sx={{
+              flex: 1,
+              minWidth: 0, // Allows flex item to shrink below its content size
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <Container 
+              maxWidth={false}
+              className="chat-container-inner"
+              sx={{
+                maxWidth: 'none',
+                width: '100%',
+                padding: '16px',
+              }}
+            >
+            <Paper 
+              elevation={3} 
+              className="chat-paper"
+              sx={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: isMobile && inputPosition === 'top' ? 'column-reverse' : 'column',
+                overflow: 'hidden',
+                height: '100%',
+                transition: isMobile ? 'flex-direction 0.3s ease-in-out' : 'none',
+              }}
+            >
+              {/* Messages Area */}
+              <Box 
+                className="messages-area"
+                sx={{
+                  backgroundColor: theme.palette.mode === 'dark' 
+                    ? theme.palette.grey[900] 
+                    : theme.palette.grey[50],
+                }}
+              >
+                {messages.length === 0 ? (
+                  <Box 
+                    className="empty-state"
+                    sx={{
+                      color: theme.palette.text.secondary,
+                    }}
+                  >
+                    <Typography variant="h6">
+                      {isCreatingChat
+                        ? 'Connecting to chat...'
+                        : !isConnected && chatId
+                          ? 'Connecting to chat room...'
+                          : chatId
+                            ? 'This chat is empty.'
+                            : 'Start conversation!'}
+                    </Typography>
+                  </Box>
+                ) : (
+                  <Box className="messages-container">
+                    {messages.map((message, index) => (
+                      <ChatMessage 
+                        key={message.id} 
+                        message={message} 
+                        selectedModel={selectedModel}
+                        onSetSelectedModel={setSelectedModel}
+                        onRegenerateMessage={regenerateMessage}
+                        onForkChat={forkChat}
+                        isLastMessage={index === messages.length - 1}
+                      />
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </Box>
+                )}
+              </Box>
+
+              {/* Input Area */}
+              <Box 
+                className="input-area"
+                sx={{
+                  backgroundColor: theme.palette.background.paper,
+                  borderTop: `1px solid ${theme.palette.divider}`,
+                }}
+              >
+                {/* Resize Handle */}
+                <Box 
+                  className="resize-handle"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    const startY = e.clientY;
+                    const inputArea = (e.target as HTMLElement).parentElement;
+                    if (!inputArea) return;
+                    
+                    const startHeight = inputArea.offsetHeight;
+                    
+                    const handleMouseMove = (moveEvent: MouseEvent) => {
+                      const deltaY = startY - moveEvent.clientY;
+                      const newHeight = Math.max(120, startHeight + deltaY);
+                      inputArea.style.height = `${newHeight}px`;
+                    };
+                    
+                    const handleMouseUp = () => {
+                      document.removeEventListener('mousemove', handleMouseMove);
+                      document.removeEventListener('mouseup', handleMouseUp);
+                    };
+                    
+                    document.addEventListener('mousemove', handleMouseMove);
+                    document.addEventListener('mouseup', handleMouseUp);
+                  }}
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    
+                    // Add haptic feedback on mobile (if available)
+                    if (navigator.vibrate) {
+                      navigator.vibrate(10); // Very short vibration
+                    }
+                    
+                    const startY = e.touches[0].clientY;
+                    const inputArea = (e.target as HTMLElement).parentElement;
+                    if (!inputArea) return;
+                    
+                    const startHeight = inputArea.offsetHeight;
+                    
+                    const handleTouchMove = (moveEvent: TouchEvent) => {
+                      // Prevent default to avoid scrolling
+                      moveEvent.preventDefault();
+                      
+                      const deltaY = startY - moveEvent.touches[0].clientY;
+                      const newHeight = Math.max(120, Math.min(400, startHeight + deltaY)); // Add max height for mobile
+                      inputArea.style.height = `${newHeight}px`;
+                    };
+                    
+                    const handleTouchEnd = () => {
+                      document.removeEventListener('touchmove', handleTouchMove);
+                      document.removeEventListener('touchend', handleTouchEnd);
+                    };
+                    
+                    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+                    document.addEventListener('touchend', handleTouchEnd, { passive: false });
+                  }}
+                />
+                
+                {/* Model Selector Row */}
+                <Box className="model-selector-row">
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    className="model-label"
+                  >
+                    Model:
+                  </Typography>
+                  <ModelSelector
+                    selectedModel={selectedModel}
+                    onModelChange={setSelectedModel}
+                    disabled={
+                      (chatId && !isConnected) ||
+                      !!currentAssistantMessage ||
+                      isCreatingChat ||
+                      isConnecting
+                    }
+                  />
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    className="send-button"
+                    form="message-form"
+                    disabled={
+                      (chatId && !isConnected) ||
+                      !messageInput.trim() ||
+                      !!currentAssistantMessage ||
+                      isCreatingChat ||
+                      !!pendingMessage
+                    }
+                  >
+                    <SendIcon />
+                  </Button>
+                </Box>
+
+                {/* Message Input Row */}
+                <Box
+                  id="message-form"
+                  component="form"
+                  onSubmit={handleSendMessage}
+                  className="message-input-row"
+                >
+                  <TextField
+                    fullWidth
+                    multiline
+                    minRows={1}
+                    variant="outlined"
+                    className="message-input"
+                    placeholder={
+                      isCreatingChat
+                        ? 'Connecting and sending message...'
+                        : !isConnected && chatId
+                          ? 'Connecting to chat room...'
+                          : 'Type your message... (Markdown supported)'
+                    }
+                    value={isCreatingChat || messageInput}
+                    onChange={(e) => setMessageInput(e.target.value)}
+                    disabled={
+                      (chatId && !isConnected) ||
+                      !!currentAssistantMessage ||
+                      isCreatingChat ||
+                      isConnecting
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage(e);
+                      }
+                    }}
+                    onFocus={(e) => {
+                      if (isMobile) {
+                        handleInputFocus();
+                      }
+                      
+                      // On mobile, scroll input into view when focused
+                      if (isMobile) {
+                        setTimeout(() => {
+                          e.target.scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'center' 
+                          });
+                        }, 300); // Wait for keyboard animation
+                      }
+                    }}
+                    onBlur={isMobile ? handleInputBlur : undefined}
+                    slotProps={{
+                      input: {
+                        ...getInputProps(),
+                        style: { 
+                          height: '100%',
+                          alignItems: 'stretch',
+                        }
+                      }
+                    }}
+                  />
+                </Box>
+              </Box>
+            </Paper>
+          </Container>
+        </Box>
+      </Box>
+    </Box>
+  </div>
+  );
+};
+
+export default ChatRoom;

@@ -1,6 +1,10 @@
 # Created by https://www.toptal.com/developers/gitignore/api/node,visualstudio
 # Edit at https://www.toptal.com/developers/gitignore?templates=node,visualstudio
 
+#### DB ####
+database.dat*
+.idea/
+
 ### Node ###
 # Logs
 logs
@@ -543,3 +547,8 @@ FodyWeavers.xsd
 # End of https://www.toptal.com/developers/gitignore/api/node,visualstudio
 
 .claude
+backend/databse.dat
+backend/databse.dat-shm
+backend/databse.dat-wal
+front-end/pnpm-lock.yaml
+pnpm-lock.yaml

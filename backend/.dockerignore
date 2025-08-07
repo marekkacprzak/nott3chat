@@ -1,0 +1,57 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Visual Studio / Visual Studio Code
+.vs/
+.vscode/
+*.user
+*.suo
+*.cache
+project.lock.json
+
+# Build outputs
+bin/
+obj/
+publish/
+publish-linux/
+deployment/
+deployment-linux/
+*.zip
+
+# Logs
+logs/
+*.log
+
+# Database files (for development)
+*.dat
+*.db
+*.sqlite
+
+# Node modules (if any)
+node_modules/
+
+# Documentation
+README.md
+*.md
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
