@@ -1,4 +1,4 @@
-﻿# NotT3Chat: The C# Answer to the T3 Stack
+# WebChat: The C# Answer - fork from https://github.com/shaltielshmid/NotT3Chat
  <img src="stuff/logo.png" width="350" />
 
 
