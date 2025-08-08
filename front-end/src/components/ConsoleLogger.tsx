@@ -77,7 +77,7 @@ const ConsoleLogger = () => {
     } catch (error) {
       console.error('Failed to restore console logs:', error);
     }
-  }, []);
+  }, [STORAGE_KEYS.IS_OPEN, STORAGE_KEYS.LOGS]);
 
   // Save logs to localStorage whenever logs change
   useEffect(() => {
@@ -87,7 +87,7 @@ const ConsoleLogger = () => {
     } catch (error) {
       console.error('Failed to save console logs:', error);
     }
-  }, [logs, logCount]);
+  }, [logs, logCount, STORAGE_KEYS.LOGS, STORAGE_KEYS.LOG_COUNT]);
 
   // Save console panel state when it changes
   useEffect(() => {
@@ -96,7 +96,7 @@ const ConsoleLogger = () => {
     } catch (error) {
       console.error('Failed to save console state:', error);
     }
-  }, [isOpen]);
+  }, [isOpen, STORAGE_KEYS.IS_OPEN]);
 
   // Detect mobile devices
   useEffect(() => {
