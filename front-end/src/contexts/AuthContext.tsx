@@ -18,6 +18,7 @@ interface AuthProviderProps {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/* eslint-disable react-refresh/only-export-components */
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) {
