@@ -9,14 +9,14 @@ export default defineConfig({
       output: {
         manualChunks: {
           // Core React libraries
-          'react-vendor': [
+          'utils': [
             'react',
             'react-dom',
             'react-router-dom',
             'prop-types',
-          ],
-          // Microsoft SignalR
-          'signalr': [
+            'react-syntax-highlighter',
+            'axios',
+            'light-classnames',
             '@microsoft/signalr',
           ],
           // MUI and Emotion
@@ -31,18 +31,9 @@ export default defineConfig({
             'react-markdown',
             'remark-gfm',
           ],
-          // Syntax highlighting (large)
-          'syntax-highlighter': [
-            'react-syntax-highlighter',
-          ],
           // Rehype highlight (large)
           'rehype-highlight': [
             'rehype-highlight',
-          ],
-          // Utility libraries
-          'utils-vendor': [
-            'axios',
-            'light-classnames',
           ],
         }
       }
