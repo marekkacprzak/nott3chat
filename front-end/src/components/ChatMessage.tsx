@@ -35,15 +35,8 @@ import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useModels } from '../contexts/ModelsContext';
 import './ChatMessage.css';
 
-interface LocalMessage {
-  id: string;
-  type: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: string | Date;
-  isComplete: boolean;
-  chatModel?: string | null;
-  finishError?: string | null;
-}
+
+import type { LocalMessage } from '../Model/LocalMessage';
 
 interface ChatMessageProps {
   message: LocalMessage;
@@ -64,9 +57,8 @@ interface PendingRegenerate {
   messageId: string;
 }
 
-const formatTime = (timestamp: string | Date): string => {
-  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
-  return date.toLocaleTimeString([], {
+const formatTime = (timestamp: Date): string => {
+  return timestamp.toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
   });

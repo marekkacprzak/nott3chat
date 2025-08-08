@@ -1,19 +1,8 @@
 import React from 'react';
 import { SelectChangeEvent } from '@mui/material/Select';
-import {
-  FormControl,
-  Select,
-  MenuItem,
-  Chip,
-  Box,
-  Typography,
-  Tooltip,
-} from '@mui/material';
-import {
-  Palette as PaletteIcon,
-  LightMode as LightModeIcon,
-  DarkMode as DarkModeIcon,
-} from '@mui/icons-material';
+import { FormControl, Select, MenuItem, Chip, Box, Typography, Tooltip } from '@mui/material';
+import { Palette as PaletteIcon, LightMode as LightModeIcon, 
+  DarkMode as DarkModeIcon } from '@mui/icons-material';
 import { useThemeMode } from '../contexts/ThemeContext';
 
 interface ThemeSelectorProps {

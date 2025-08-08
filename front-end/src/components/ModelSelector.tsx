@@ -1,28 +1,11 @@
 import React, { useEffect, useCallback } from 'react';
 import { SelectChangeEvent } from '@mui/material/Select';
 import lcn from 'light-classnames';
+import { FormControl, Select, MenuItem, Box, Typography, 
+  Chip, CircularProgress } from '@mui/material';
 import {
-  FormControl,
-  Select,
-  MenuItem,
-  Box,
-  Typography,
-  Chip,
-  CircularProgress,
-} from '@mui/material';
-import {
-  SmartToy,
-  Psychology,
-  Cloud,
-  Code,
-  Extension,
-  Search,
-  Speed,
-  Waves,
-  AutoAwesome,
-  FlashOn,
-  TravelExplore,
-} from '@mui/icons-material';
+  SmartToy, Psychology, Cloud, Code, Extension, Search, 
+  Speed, Waves, AutoAwesome, FlashOn, TravelExplore } from '@mui/icons-material';
 import { useModels } from '../contexts/ModelsContext';
 import './ModelSelector.css';
 import { Model } from '@/services/modelApi';
