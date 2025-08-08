@@ -12,6 +12,8 @@ import * as signalR from '@microsoft/signalr';
 import { useAuth } from './AuthContext';
 import { useChats } from './ChatContext';
 import { useNavigate } from 'react-router-dom';
+import { Chat } from '@/services/chatApi';
+import { HubConnection, RetryContext } from '@microsoft/signalr';
 
 interface ServerMessage {
   id: string;
@@ -97,19 +99,19 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
   const reconnectTimeoutRef = useRef<number | null>(null);
   
   // Define event handlers as stable references outside of setupEventHandlers
-  const handleConversationHistory = useCallback((convoId: string, messages: any[]) => {
+  const handleConversationHistory = useCallback((convoId: string, messages: ServerMessage[]) => {
     if (convoId === currentChatId.current) {
-      setMessages(messages.map((msg: any) => serverMessageToLocal(msg)));
+      setMessages(messages.map((msg: ServerMessage) => serverMessageToLocal(msg)));
     }
   }, []);
 
-  const handleUserMessage = useCallback((convoId: string, message: any) => {
+  const handleUserMessage = useCallback((convoId: string, message: ServerMessage) => {
     if (convoId === currentChatId.current) {
       setMessages((prev) => replaceOrAddMessage(prev, serverMessageToLocal(message)));
     }
   }, []);
 
-  const handleBeginAssistantMessage = useCallback((convoId: string, message: any) => {
+  const handleBeginAssistantMessage = useCallback((convoId: string, message: ServerMessage) => {
     if (convoId === currentChatId.current) {
       const newMessage = serverMessageToLocal(message, false);
       setCurrentAssistantMessage(newMessage);
@@ -162,7 +164,7 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
     updateChatTitle(titleChatId, title);
   }, [updateChatTitle]);
 
-  const handleNewConversation = useCallback((convo: any) => {
+  const handleNewConversation = useCallback((convo: Chat) => {
     addNewChat(convo);
   }, [addNewChat]);
 
@@ -189,7 +191,7 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
     setIsConnected(false);
   }, []);
 
-  const setupEventHandlers = useCallback((conn: any) => {
+  const setupEventHandlers = useCallback((conn: HubConnection) => {
     // Clean up any existing handlers
     conn.off('ConversationHistory');
     conn.off('UserMessage');
@@ -315,7 +317,7 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
       // Check for stored SignalR JWT token (primary auth method)
       const signalRToken = localStorage.getItem('signalRToken');
       
-      let connectionOptions: any = {
+      let connectionOptions: signalR.IHttpConnectionOptions = {
         withCredentials: true,
         transport:
           signalR.HttpTransportType.WebSockets |
@@ -338,8 +340,8 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
       const newConnection = new signalR.HubConnectionBuilder()
         .withUrl(url, connectionOptions)
         .withAutomaticReconnect({
-          nextRetryDelayInMilliseconds: (retryContext: any) => {
-            if (retryContext.elapsedTime < 60000) {
+          nextRetryDelayInMilliseconds: (retryContext: RetryContext) => {
+            if (retryContext.elapsedMilliseconds < 60000) {
               return Math.random() * 10000;
             } else {
               return null;

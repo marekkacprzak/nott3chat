@@ -10,8 +10,10 @@ import api from '../services/api';
 interface AuthContextType {
   isAuthenticated: boolean;
   loading: boolean;
+   
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
+   
   register: (username: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   checkAuth: () => Promise<void>;
 }
@@ -64,7 +66,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       
       console.log('✅ Authentication check successful');
-    } catch (error) {
+    } catch (error) {  
       //console.warn('⚠️ Authentication check failed:', error?.response?.status);
       
       // If token auth fails, remove the invalid token
@@ -108,16 +110,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.error('❌ Token response missing accessToken:', tokenResponse.data);
         throw new Error('Token not received from server');
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('❌ Token-based authentication failed:', error);
       
       let errorMessage: string;
-      if (!error.response) {
+      const axiosError = error as { response?: { status?: number; data?: { message?: string } } };
+      if (!axiosError.response) {
         errorMessage = 'Server currently not available';
-      } else if (error.response?.status === 404) {
+      } else if (axiosError.response?.status === 404) {
         errorMessage = 'Server currently not available';
       } else {
-        errorMessage = error.response?.data?.message || 'Login failed';
+        errorMessage = axiosError.response?.data?.message || 'Login failed';
       }
       
       return {
@@ -137,10 +140,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // After successful registration, log the user in
       const loginResult = await login(email, password);
       return loginResult;
-    } catch (error: any) {
+    } catch (error) {
+      const axiosError = error as { response?: { data?: { message?: string; title?: string } } };
       return {
         success: false,
-        error: error.response?.data?.message || error.response?.data?.title || 'Registration failed',
+        error: axiosError.response?.data?.message || axiosError.response?.data?.title || 'Registration failed',
       };
     }
   }, [login]);

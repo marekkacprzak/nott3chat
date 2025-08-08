@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback } from 'react';
-
+import { SelectChangeEvent } from '@mui/material/Select';
 import lcn from 'light-classnames';
 import {
   FormControl,
@@ -25,8 +25,11 @@ import {
 } from '@mui/icons-material';
 import { useModels } from '../contexts/ModelsContext';
 import './ModelSelector.css';
+import { Model } from '@/services/modelApi';
 
-const providerIcons = {
+type ProviderName = 'OpenAi' | 'Anthropic' | 'AzureOpenAi' | 'Cohere' | 'Custom' | 'Google' | 'Groq' | 'DeepSeek' | 'Mistral' | 'XAi' | 'Perplexity';
+
+const providerIcons: Record<ProviderName, React.ReactElement> = {
   OpenAi: <SmartToy />,
   Anthropic: <Psychology />,
   AzureOpenAi: <Cloud />,
@@ -40,7 +43,7 @@ const providerIcons = {
   Perplexity: <TravelExplore />,
 };
 
-const providerClasses = {
+const providerClasses: Record<ProviderName, string> = {
   OpenAi: 'openai',
   Anthropic: 'anthropic',
   AzureOpenAi: 'azure',
@@ -71,7 +74,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ selectedModel, onModelCha
   }, [selectedModel, onModelChange, models]);
 
   const handleChange = useCallback(
-    (event: any) => {
+    (event: SelectChangeEvent<string>) => {
       onModelChange(event.target.value);
     },
     [onModelChange]
@@ -113,14 +116,18 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ selectedModel, onModelCha
             if (!model)
               return <Typography variant="body2">Select model</Typography>;
 
+            const providerName = (model.provider as ProviderName) || 'Custom';
+            const className = providerClasses[providerName] || 'custom';
+            const icon = providerIcons[providerName] || <Extension />;
+            
             return (
               <Box className="render-value">
                 <Box
                   className={lcn('provider-icon', {
-                    [(providerClasses as any)[model.provider || 'custom'] || 'custom']: true,
+                    [className]: true,
                   })}
                 >
-                  {(providerIcons as any)[model.provider || 'custom'] || <Extension />}
+                  {icon}
                 </Box>
                 <Typography variant="body2" className="model-name">
                   {model.name}
@@ -129,27 +136,33 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ selectedModel, onModelCha
             );
           }}
         >
-          {models.map((model) => (
-            <MenuItem key={model.name} value={model.name}>
-              <Box className="menu-item">
-                <Box
-                  className={lcn('menu-item-icon provider-icon', {
-                    [(providerClasses as any)[model.provider || 'custom'] || 'custom']: true,
-                  })}
-                >
-                  {(providerIcons as any)[model.provider || 'custom'] || <Extension />}
+          {models.map((model: Model) => {
+            const providerName = (model.provider as ProviderName) || 'Custom';
+            const className = providerClasses[providerName] || 'custom';
+            const icon = providerIcons[providerName] || <Extension />;
+            
+            return (
+              <MenuItem key={model.name} value={model.name}>
+                <Box className="menu-item">
+                  <Box
+                    className={lcn('menu-item-icon provider-icon', {
+                      [className]: true,
+                    })}
+                  >
+                    {icon}
+                  </Box>
+                  <Box className="menu-item-content">
+                    <Typography variant="body2" className="menu-item-title">
+                      {model.name}
+                    </Typography>
+                    <Typography variant="caption" className="menu-item-provider">
+                      {model.provider}
+                    </Typography>
+                  </Box>
                 </Box>
-                <Box className="menu-item-content">
-                  <Typography variant="body2" className="menu-item-title">
-                    {model.name}
-                  </Typography>
-                  <Typography variant="caption" className="menu-item-provider">
-                    {model.provider}
-                  </Typography>
-                </Box>
-              </Box>
-            </MenuItem>
-          ))}
+              </MenuItem>
+            );
+          })}
         </Select>
       </FormControl>
     </div>

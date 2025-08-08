@@ -1,10 +1,10 @@
 // Global type declarations for missing modules
 
 declare module 'react-syntax-highlighter' {
-  import React from 'react';
+  import * as React from 'react';
   export interface SyntaxHighlighterProps {
     language?: string;
-    style?: any;
+    style?: Record<string, React.CSSProperties>;
     customStyle?: React.CSSProperties;
     showLineNumbers?: boolean;
     children?: string;
@@ -13,6 +13,7 @@ declare module 'react-syntax-highlighter' {
 }
 
 declare module 'react-syntax-highlighter/dist/esm/styles/prism' {
-  export const vscDarkPlus: any;
-  export const vs: any;
+  import * as React from 'react';
+  export const vscDarkPlus: Record<string, React.CSSProperties>;
+  export const vs: Record<string, React.CSSProperties>;
 }
