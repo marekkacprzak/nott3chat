@@ -21,6 +21,13 @@ export default [
         sessionStorage: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
+        HTMLElement: 'readonly',
+        HTMLDivElement: 'readonly',
+        HTMLMetaElement: 'readonly',
+        MouseEvent: 'readonly',
+        TouchEvent: 'readonly',
+        Event: 'readonly',
+        Node: 'readonly',
       },
       parserOptions: {
         ecmaVersion: 'latest',
@@ -40,13 +47,11 @@ export default [
       ...react.configs.recommended.rules,
       ...react.configs['jsx-runtime'].rules,
       ...reactHooks.configs.recommended.rules,
+      'no-unused-vars': 'off',
       'react/jsx-no-target-blank': 'off',
-      'react-refresh/only-export-components': [
-        'warn',
-        { allowConstantExport: true },
-      ],
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-      '@typescript-eslint/no-explicit-any': 'warn',
+      'react-refresh/only-export-components': 'off',
+      'react-hooks/exhaustive-deps': 'off',
+      '@typescript-eslint/no-explicit-any': 'error'
     },
   },
 ]

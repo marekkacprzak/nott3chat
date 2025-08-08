@@ -35,22 +35,38 @@ import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useModels } from '../contexts/ModelsContext';
 import './ChatMessage.css';
 
+interface LocalMessage {
+  id: string;
+  type: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string | Date;
+  isComplete: boolean;
+  chatModel?: string | null;
+  finishError?: string | null;
+}
+
 interface ChatMessageProps {
-  message: any; // TODO: Define proper message type
+  message: LocalMessage;
   selectedModel: string;
+   
   onSetSelectedModel: (model: string) => void;
+   
   onRegenerateMessage: (model: string, messageId: string) => Promise<void>;
+   
   onForkChat: (messageId: string) => Promise<void>;
   isLastMessage: boolean;
 }
 
 interface PendingRegenerate {
+   
   model: string;
+   
   messageId: string;
 }
 
-const formatTime = (timestamp: string): string => {
-  return new Date(timestamp).toLocaleTimeString([], {
+const formatTime = (timestamp: string | Date): string => {
+  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+  return date.toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -194,33 +210,35 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                   remarkPlugins={[remarkGfm]}
                   rehypePlugins={[rehypeHighlight]}
                   components={{
-                    code: ({ className, children, ...props }: any) => {
-                      const match = /language-(\w+)/.exec(className || '');
+                    code: (props: { className?: string; children?: React.ReactNode }) => {
+                      const { className, children } = props;
+                      const match = /language-(\\w+)/.exec(className || '');
                       const language = match ? match[1] : '';
                       
                       // Properly extract text content from children
-                      const getTextContent = (node: any): string => {
+                      const getTextContent = (node: React.ReactNode): string => {
                         if (typeof node === 'string') return node;
                         if (Array.isArray(node)) return node.map(getTextContent).join('');
-                        if (node && node.props && node.props.children) return getTextContent(node.props.children);
+                        if (node && typeof node === 'object' && node !== null && 'props' in node) {
+                          const element = node as React.ReactElement<{ children?: React.ReactNode }>;
+                          return getTextContent(element.props.children);
+                        }
                         return '';
                       };
                       
-                      const codeString = getTextContent(children).replace(/\n$/, '');
+                      const codeString = getTextContent(children).replace(/\\n$/, '');
                       
                       return language ? (
                         <div className="markdown-code-block">
                           <SyntaxHighlighter
                             style={theme.palette.mode === 'dark' ? vscDarkPlus : vs}
                             language={language}
-                            PreTag="div"
-                            {...props}
                           >
                             {codeString}
                           </SyntaxHighlighter>
                         </div>
                       ) : (
-                        <code className="markdown-code-inline" {...props}>
+                        <code className="markdown-code-inline">
                           {codeString}
                         </code>
                       );

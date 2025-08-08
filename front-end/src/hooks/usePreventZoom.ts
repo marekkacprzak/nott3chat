@@ -1,5 +1,4 @@
-import { useCallback, useRef, useEffect } from 'react';
-
+import React, { useCallback, useRef, useEffect } from 'react';
 interface ViewportMeta {
   element: HTMLMetaElement | null;
   originalContent: string;
@@ -66,7 +65,7 @@ export const usePreventZoom = () => {
   }, []);
 
   const getInputProps = useCallback(() => ({
-    onFocus: (e: any) => {
+    onFocus: (e: React.FocusEvent<HTMLElement>) => {
       disableZoom();
       // Ensure we prevent default zoom behavior
       e.target.style.fontSize = '16px';

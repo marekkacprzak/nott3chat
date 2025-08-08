@@ -1,4 +1,5 @@
 import React from 'react';
+import { SelectChangeEvent } from '@mui/material/Select';
 import {
   FormControl,
   Select,
@@ -22,16 +23,16 @@ interface ThemeSelectorProps {
 }
 
 const ThemeSelector: React.FC<ThemeSelectorProps> = ({ variant = 'standard', size = 'small' }) => {
-  const { currentTheme, changeTheme, getAvailableThemes, getCurrentThemeConfig } = useThemeMode();
+  const { currentTheme, changeTheme, getAvailableThemes, getCurrentThemeConfig, themeVariants } = useThemeMode();
   const availableThemes = getAvailableThemes();
   const currentConfig = getCurrentThemeConfig();
 
-  const handleThemeChange = (event: any) => {
+  const handleThemeChange = (event: SelectChangeEvent<string>) => {
     changeTheme(event.target.value);
   };
 
   const getThemeIcon = (themeName: string) => {
-    const config = useThemeMode().themeVariants[themeName];
+    const config = themeVariants[themeName];
     return config.mode === 'dark' ? (
       <DarkModeIcon sx={{ fontSize: 16, mr: 1 }} />
     ) : (
@@ -40,7 +41,7 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({ variant = 'standard', siz
   };
 
   const getThemeColor = (themeName: string) => {
-    const config = useThemeMode().themeVariants[themeName];
+    const config = themeVariants[themeName];
     return config.primaryColor;
   };
 

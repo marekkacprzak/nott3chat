@@ -91,12 +91,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onChatSelect, currentChatId, 
   );
 
   // Handle resize functionality for both mouse and touch
-  const handleResizeStart = useCallback((event: any) => {
+  const handleResizeStart = useCallback((event: React.MouseEvent<HTMLElement> | React.TouchEvent<HTMLElement>) => {
     event.preventDefault();
     
     // Determine if it's a touch or mouse event
-    const isTouchEvent = event.touches && event.touches.length > 0;
-    const startX = isTouchEvent ? event.touches[0].clientX : event.clientX;
+    const isTouchEvent = 'touches' in event && event.touches.length > 0;
+    const startX = isTouchEvent ? event.touches[0].clientX : (event as React.MouseEvent).clientX;
     const startWidth = isCollapsed ? COLLAPSED_WIDTH : sidebarWidth;
     
     // Add haptic feedback on mobile (if available)
@@ -108,7 +108,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onChatSelect, currentChatId, 
     let initialTouchX = startX;
     let hasMovedSignificantly = false;
 
-    const handleMove = (moveEvent: any) => {
+    const handleMove = (moveEvent: MouseEvent | TouchEvent) => {
       // Prevent default to avoid scrolling
       if ('touches' in moveEvent) {
         moveEvent.preventDefault();

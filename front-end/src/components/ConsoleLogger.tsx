@@ -29,7 +29,25 @@ const ConsoleLogger = () => {
   const [logCount, setLogCount] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
-  const originalConsole = useRef<any>({});
+  const originalConsole = useRef<{
+    log: typeof console.log;
+    error: typeof console.error;
+    warn: typeof console.warn;
+    info: typeof console.info;
+    debug: typeof console.debug;
+    table: typeof console.table;
+    trace: typeof console.trace;
+    assert: typeof console.assert;
+  }>({} as {
+    log: typeof console.log;
+    error: typeof console.error;
+    warn: typeof console.warn;
+    info: typeof console.info;
+    debug: typeof console.debug;
+    table: typeof console.table;
+    trace: typeof console.trace;
+    assert: typeof console.assert;
+  });
 
   // Storage keys for persistence
   const STORAGE_KEYS = {
@@ -83,7 +101,7 @@ const ConsoleLogger = () => {
   // Detect mobile devices
   useEffect(() => {
     const checkMobile = () => {
-      const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+      const userAgent = navigator.userAgent || navigator.vendor || (window as unknown as { opera?: string }).opera || '';
       const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
       const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
       const isSmallScreen = window.innerWidth <= 768;
@@ -116,8 +134,8 @@ const ConsoleLogger = () => {
       assert: console.assert,
     };
 
-    const createLogInterceptor = (type: string, originalMethod: any) => {
-      return (...args: any[]) => {
+    const createLogInterceptor = (type: string, originalMethod: Function) => {
+      return (...args: unknown[]) => {
         // Call original method
         originalMethod.apply(console, args);
         
@@ -150,11 +168,11 @@ const ConsoleLogger = () => {
           type,
           timestamp,
           args: processedArgs.map(arg => {
-            if (typeof arg === 'object') {
+            if (typeof arg === 'object' && arg !== null) {
               try {
                 return JSON.stringify(arg, null, 2);
-              } catch (e) {
-                return arg.toString();
+              } catch {
+                return arg?.toString() || 'null';
               }
             }
             return String(arg);
@@ -433,7 +451,7 @@ const ConsoleLogger = () => {
                     </Typography>
                   </Box>
                   <Box>
-                    {log.args.map((arg: any, index: number) => (
+                    {log.args.map((arg: string, index: number) => (
                       <Typography
                         key={index}
                         component="div"
