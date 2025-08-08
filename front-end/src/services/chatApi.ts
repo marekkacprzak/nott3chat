@@ -10,7 +10,7 @@ export interface ChatMessage {
   id: string;
   content: string;
   role: 'user' | 'assistant' | 'system';
-  timestamp: string;
+  timestamp: Date;
   conversationId: string;
 }
 

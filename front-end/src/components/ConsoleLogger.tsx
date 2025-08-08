@@ -19,7 +19,7 @@ import './ConsoleLogger.css';
 interface LogEntry {
   id: number;
   type: string;
-  timestamp: string;
+  timestamp: Date;
   args: string[];
 }
 
@@ -162,7 +162,7 @@ const ConsoleLogger = () => {
         }
         
         // Create log entry for our display
-        const timestamp = new Date().toLocaleTimeString();
+        const timestamp = new Date();
         const logEntry = {
           id: Date.now() + Math.random(),
           type,
@@ -447,7 +447,7 @@ const ConsoleLogger = () => {
                       variant="caption"
                       sx={{ color: 'rgba(255, 255, 255, 0.5)' }}
                     >
-                      {log.timestamp}
+                      {log.timestamp instanceof Date ? log.timestamp.toLocaleTimeString() : log.timestamp}
                     </Typography>
                   </Box>
                   <Box>

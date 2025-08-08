@@ -1,14 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import {
-  Box,
-  Button,
-  Container,
-  Paper,
-  TextField,
-  Typography,
-  Alert,
-} from '@mui/material';
+import { Box, Button, Container, Paper, TextField, Typography, Alert } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeSelector from './ThemeSelector';
 import './LoginPage.css';

@@ -1,13 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { createTheme, Theme } from '@mui/material/styles';
-
-interface ThemeConfig {
-  mode: 'light' | 'dark';
-  primaryColor: string;
-  secondaryColor: string;
-  backgroundColor: string;
-  paperColor: string;
-}
+import type { ThemeConfig } from '../Model/ThemeConfig';
 
 interface ThemeContextType {
   theme: Theme;

@@ -1,40 +1,14 @@
 
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  useMemo,
-} from 'react';
+import React, { createContext, useContext, useState, useEffect,
+  useCallback, useRef, useMemo } from 'react';
 import * as signalR from '@microsoft/signalr';
 import { useAuth } from './AuthContext';
 import { useChats } from './ChatContext';
 import { useNavigate } from 'react-router-dom';
 import { Chat } from '@/services/chatApi';
 import { HubConnection, RetryContext } from '@microsoft/signalr';
-
-interface ServerMessage {
-  id: string;
-  index: number;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: string;
-  chatModel?: string;
-  finishError?: string;
-}
-
-interface LocalMessage {
-  id: string;
-  index: number;
-  type: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: Date;
-  isComplete: boolean;
-  chatModel: string | null;
-  finishError: string | null;
-}
+import type { LocalMessage } from '../Model/LocalMessage';
+import type { ServerMessage } from '../Model/ServerMessage';
 
 interface SignalRContextType {
   connection: signalR.HubConnection | null;
