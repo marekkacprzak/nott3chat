@@ -16,6 +16,7 @@ interface ModelsProviderProps {
 
 const ModelsContext = createContext<ModelsContextType | undefined>(undefined);
 
+/* eslint-disable react-refresh/only-export-components */
 export const useModels = (): ModelsContextType => {
   const context = useContext(ModelsContext);
   if (!context) {

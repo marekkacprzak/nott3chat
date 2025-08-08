@@ -49,8 +49,8 @@ export default [
       ...reactHooks.configs.recommended.rules,
       'no-unused-vars': 'off',
       'react/jsx-no-target-blank': 'off',
-      'react-refresh/only-export-components': 'off',
-      'react-hooks/exhaustive-deps': 'off',
+      'react-refresh/only-export-components': 'error',
+      'react-hooks/exhaustive-deps': 'error',
       '@typescript-eslint/no-explicit-any': 'error'
     },
   },

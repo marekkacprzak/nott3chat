@@ -19,6 +19,7 @@ interface ChatProviderProps {
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
+/* eslint-disable react-refresh/only-export-components */
 export const useChats = (): ChatContextType => {
   const context = useContext(ChatContext);
   if (!context) {

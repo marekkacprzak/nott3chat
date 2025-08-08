@@ -29,6 +29,7 @@ interface SignalRProviderProps {
 
 const SignalRContext = createContext<SignalRContextType | undefined>(undefined);
 
+/* eslint-disable react-refresh/only-export-components */
 export const useSignalR = (): SignalRContextType => {
   const context = useContext(SignalRContext);
   if (!context) {
