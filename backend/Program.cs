@@ -1,34 +1,33 @@
-using Microsoft.AspNetCore.SignalR;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 using System.ComponentModel.DataAnnotations;
-using Serilog;
-using NotT3ChatBackend.Data;
-using NotT3ChatBackend.Models;
-using NotT3ChatBackend.Services;
-using NotT3ChatBackend.Hubs;
-using NotT3ChatBackend.DTOs;
-using Microsoft.AspNetCore.Http.HttpResults;
-using NotT3ChatBackend.Endpoints;
-using NotT3ChatBackend.Utils;
-using Microsoft.AspNetCore.Mvc;
+using System.IdentityModel.Tokens.Jwt;
+using System.Reflection;
+using System.Security.Claims;
+using System.Text;
 using System.Text.RegularExpressions;
 using Azure.AI.OpenAI;
 using Azure.Identity;
-using System.Text;
-using Azure.Security.KeyVault.Secrets;
-using System.Reflection;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
-using Serilog.Events;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
- 
+using NotT3ChatBackend.Data;
+using NotT3ChatBackend.DTOs;
+using NotT3ChatBackend.Endpoints;
+using NotT3ChatBackend.Hubs;
+using NotT3ChatBackend.Models;
+using NotT3ChatBackend.Services;
+using NotT3ChatBackend.Utils;
+using Serilog;
+using Serilog.Events;
+
 // This code is staying in one file for now as an intentional experiment for .NET 10's dotnet run app.cs feature,
 // but we are aware of the importance of separating so we are currently assigning regions to be split when the time is right.
 
@@ -48,12 +47,6 @@ namespace NotT3ChatBackend
 
             if (builder.Configuration["ASPNETCORE_ENVIRONMENT"] == "Production")
             {
-                if (!string.IsNullOrEmpty(builder.Configuration["KeyVaultName"]))
-                {
-                    builder.Configuration.AddAzureKeyVault(
-                        new Uri($"https://{builder.Configuration["KeyVaultName"]}.vault.azure.net/"),
-                        new DefaultAzureCredential());
-                }
                 builder.Services.AddApplicationInsightsTelemetry();
             }
 
@@ -105,12 +98,12 @@ namespace NotT3ChatBackend
                 // This is OSS project, feel free to update this for your own use-cases
                 if (builder.Environment.IsProduction())
                 {
-                    var webUrl = builder.Configuration["WebUrl"];
-                    if (string.IsNullOrWhiteSpace(webUrl))
-                        throw new InvalidOperationException("WebUrl must be set in configuration for Cors policy.");
+                    var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+                    if (allowedOrigins == null || allowedOrigins.Length == 0)
+                        throw new InvalidOperationException("Cors:AllowedOrigins must be set in configuration for Cors policy.");
                     options.AddPolicy("OpenCorsPolicy", policy =>
                     {
-                        policy.WithOrigins(webUrl)
+                        policy.WithOrigins(allowedOrigins)
                               .AllowAnyHeader()
                               .AllowAnyMethod()
                               .AllowCredentials()

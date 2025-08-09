@@ -37,6 +37,12 @@ resource "azurerm_linux_web_app" "main" {
     
     # Use managed identity for ACR authentication
     container_registry_use_managed_identity = true
+    
+    # CORS configuration
+    cors {
+      allowed_origins     = [var.web_url]
+      support_credentials = true
+    }
   }
 
   storage_account {
@@ -57,9 +63,8 @@ resource "azurerm_linux_web_app" "main" {
     "WEBSITES_CONTAINER_START_TIME_LIMIT"       = "1800"
     "ConnectionStrings__DefaultConnection"     = "Data Source=/mnt/azurefileshare/database.dat"
   }, var.enable_key_vault ? {
-    # Key Vault enabled - use Key Vault references and name
-    "KeyVaultName"     = var.key_vault_name
-    "JwtSecretKeyReference"   = var.jwt_secret_reference
+    # Key Vault enabled - use Key Vault references
+    "Jwt__SecretKey"   = var.jwt_secret_reference
   } : {
     # Key Vault disabled - generate JWT secret
     "Jwt__SecretKey"   = random_password.jwt_fallback[0].result
@@ -67,18 +72,18 @@ resource "azurerm_linux_web_app" "main" {
     "APPLICATIONINSIGHTS_CONNECTION_STRING" = var.app_insights_connection_string
   } : {}, var.enable_key_vault && var.openai_secret_reference != "" ? {
     # OpenAI key from Key Vault
-    "OpenAIApiKeyReference" = var.openai_secret_reference
+    "OpenAI__ApiKey" = var.openai_secret_reference
   } : !var.enable_key_vault && var.openai_api_key != "" ? {
     # OpenAI key from environment variable
     "OpenAI__ApiKey" = var.openai_api_key
   } : {}, var.enable_key_vault && var.perplexity_secret_reference != "" ? {
     # Perplexity key from Key Vault
-    "PerplexityApiKeyReference" = var.perplexity_secret_reference
+    "Perplexity__ApiKey" = var.perplexity_secret_reference
   } : !var.enable_key_vault && var.perplexity_api_key != "" ? {
     # Perplexity key from environment variable
     "Perplexity__ApiKey" = var.perplexity_api_key
   } : {}, var.web_url != "" ? {
-    "WebUrl" = var.web_url
+    "Cors__AllowedOrigins__0" = var.web_url
   } : {})
 
   tags = var.tags

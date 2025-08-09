@@ -92,7 +92,6 @@ module "app_service" {
   resource_group_name           = module.resource_group.name
   enable_key_vault              = var.enable_key_vault
   key_vault_id                  = var.enable_key_vault ? module.key_vault[0].id : ""
-  key_vault_name                = var.enable_key_vault ? module.key_vault[0].name : ""
   jwt_secret_reference          = var.enable_key_vault ? module.key_vault[0].jwt_secret_reference : ""
   openai_secret_reference       = var.enable_key_vault ? module.key_vault[0].openai_secret_reference : ""
   perplexity_secret_reference   = var.enable_key_vault ? module.key_vault[0].perplexity_secret_reference : ""
