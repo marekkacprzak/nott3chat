@@ -46,8 +46,14 @@ namespace NotT3ChatBackend
             builder.Configuration.AddEnvironmentVariables();
             builder.Configuration.AddUserSecrets(Assembly.GetExecutingAssembly());
 
-            if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
+            if (builder.Configuration["ASPNETCORE_ENVIRONMENT"] == "Production")
             {
+                if (!string.IsNullOrEmpty(builder.Configuration["KeyVaultName"]))
+                {
+                    builder.Configuration.AddAzureKeyVault(
+                        new Uri($"https://{builder.Configuration["KeyVaultName"]}.vault.azure.net/"),
+                        new DefaultAzureCredential());
+                }
                 builder.Services.AddApplicationInsightsTelemetry();
             }
 
@@ -97,18 +103,32 @@ namespace NotT3ChatBackend
             builder.Services.AddCors(options =>
             {
                 // This is OSS project, feel free to update this for your own use-cases
-                options.AddPolicy("OpenCorsPolicy", policy =>
+                if (builder.Environment.IsProduction())
                 {
-                    policy.SetIsOriginAllowed(origin =>
+                    var webUrl = builder.Configuration["WebUrl"];
+                    if (string.IsNullOrWhiteSpace(webUrl))
+                        throw new InvalidOperationException("WebUrl must be set in configuration for Cors policy.");
+                    options.AddPolicy("OpenCorsPolicy", policy =>
                     {
-                        // We'll log this in middleware instead to get proper source context
-                        return true; // Allow all origins for development
-                    })
-                    .AllowAnyHeader()
-                    .AllowAnyMethod()
-                    .AllowCredentials()
-                    .SetPreflightMaxAge(TimeSpan.FromSeconds(86400)); // Cache preflight for 24 hours
-                });
+                        policy.WithOrigins(webUrl)
+                              .AllowAnyHeader()
+                              .AllowAnyMethod()
+                              .AllowCredentials()
+                              .SetPreflightMaxAge(TimeSpan.FromSeconds(86400)); // Cache preflight for 24 hours
+                    });
+                }
+                else
+                {
+                    // Development CORS policy
+                    options.AddPolicy("OpenCorsPolicy", policy =>
+                    {
+                        policy.AllowAnyOrigin()
+                              .AllowAnyHeader()
+                              .AllowAnyMethod()
+                              .AllowCredentials()
+                              .SetPreflightMaxAge(TimeSpan.FromSeconds(86400)); // Cache preflight for 24 hours
+                    });
+                }
             });
             builder.Services.AddIdentityApiEndpoints<NotT3User>()
                         .AddRoles<IdentityRole>()
@@ -495,7 +515,7 @@ namespace NotT3ChatBackend.Services {
             _perplexityService = perplexityService;
 
             // Check OpenAI configuration first (preferred)
-            var openAiApiKey = configuration["OpenAI:ApiKey"] ?? GetOpenApiKeyFromVault(configuration);
+            var openAiApiKey = configuration["OpenAI:ApiKey"];
             if (!string.IsNullOrEmpty(openAiApiKey))
             {
                 _useOpenAi = true;
@@ -521,21 +541,6 @@ namespace NotT3ChatBackend.Services {
                 _titleModel = configuration["AzureOpenAI:TitleModel"] ?? "gpt-4o-mini";
                 _logger.LogDebug("ChatService initialized with Azure OpenAI using {ModelCount} models", _models.Length);
             }
-        }
-
-        private static string GetOpenApiKeyFromVault(IConfiguration configuration)
-        {
-            // Add Azure Key Vault Configuration
-            var keyVaultUrl = configuration["KeyVaultUrl"];
-            if (!string.IsNullOrEmpty(keyVaultUrl))
-            {
-                var secretClient = new SecretClient(new Uri(keyVaultUrl), new DefaultAzureCredential());
-                // Example: Retrieve a secret
-                var secret = secretClient.GetSecret("OpenApiKey");
-                return secret.Value.Value;
-            }
-
-            return string.Empty;
         }
 
         public ICollection<ChatModelDto> GetAvailableModels()

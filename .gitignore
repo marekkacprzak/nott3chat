@@ -82,6 +82,7 @@ web_modules/
 
 # dotenv environment variable files
 .env
+.env.production
 .env.development.local
 .env.test.local
 .env.production.local
@@ -552,3 +553,65 @@ backend/databse.dat-shm
 backend/databse.dat-wal
 front-end/pnpm-lock.yaml
 pnpm-lock.yaml
+
+# Local .terraform directories and files
+**/.terraform/*
+
+# .tfstate files - contains infrastructure state information
+*.tfstate
+*.tfstate.*
+
+# Crash log files (generated when Terraform crashes locally)
+crash.log
+crash.*.log
+
+# Variable files - likely to contain sensitive data like passwords, private keys
+*.tfvars
+*.tfvars.json
+
+# Override files - usually used to override resources locally
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Include override files you do wish to add to version control using negated pattern
+# !example_override.tf
+
+# Include tfplan files to ignore the plan output of command: terraform plan -out=tfplan
+# example: *tfplan*
+
+# Ignore CLI configuration files
+.terraformrc
+terraform.rc
+
+# Terraform lock file (comment out if you want to include it)
+**/.terraform.lock.hcl
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Auto-generated variable files
+*.auto.tfvars
+
+# Environment-specific files
+.envrc
+
+# Backup files
+*.backup
+*.bak
+
+# Log files
+*.log

@@ -18,6 +18,8 @@ az staticwebapp secrets list --name "TestWebApp" --resource-group "chat"  --quer
 
 # Deploy the built files
 npx @azure/static-web-apps-cli deploy ./dist --deployment-token "YOUR_DEPLOYMENT_TOKEN" --env production
+pnpm dlx @azure/static-web-apps-cli deploy ./dist --deployment-token "YOUR_DEPLOYMENT_TOKEN" --env production
 
-// static web env
-"VITE_API_URL": "https://webappapi.azurewebsites.net"
+//  static web env
+ C:\Users\<<user>>\.claude.json
+#memory #sequentialthinking #context7 #microsoft-docs

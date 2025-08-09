@@ -34,6 +34,12 @@ This is far from just a "hello world" chat. We've packed in some serious feature
 
 *   **🤖 Azure OpenAI Integration:** Seamlessly integrated with Azure OpenAI services using credential-based authentication (no API keys required).
 *   **🔍 Perplexity Search Integration:** Advanced search capabilities through Perplexity AI for comprehensive research and information retrieval.
+*   **🏗️ Azure Infrastructure Automation:** Complete Terraform infrastructure-as-code for Azure deployment with configurable components:
+     * Linux App Service with Docker container support and Azure Container Registry integration
+     * Azure Key Vault for secure secrets management with managed identity authentication
+     * Azure Static Web Apps for frontend hosting
+     * Optional Windows redirect web app with .NET Framework 4.0 for nice dns name for the web app
+     * Azure Files storage mounting for persistent SQLite database storage
 *   **⚡ Blazing-Fast Real-Time Chat:** Built with the magic of **[SignalR](https://dotnet.microsoft.com/apps/aspnet/signalr)**, messages stream in real-time.
 *   **🔄 Advanced Stream Resumption:** Did you close your browser tab mid-stream? No problem. Re-open the chat, and the stream will pick up right where it left off.
 *   **🤝 Multi-Session Sync:** Open the same chat in multiple windows or on different devices, and watch the messages stream in perfect sync across all of them.

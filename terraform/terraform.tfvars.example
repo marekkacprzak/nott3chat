@@ -1,0 +1,25 @@
+# Copy this file to terraform.tfvars and update the values
+
+# Required variables
+namespace_name   = "nott3chat"
+app_service_name = "nott3chat-backend"
+
+# Optional variables
+enable_redirect_web_app = false       # Set to true to create Windows redirect web app
+redirect_app_name       = "mychatwebappsec" # Name for the redirect web app (Windows/.NET)
+location                = "West Europe"
+environment             = "prod"
+enable_key_vault        = true   # Set to false to disable Key Vault
+enable_application_insights = false  # Set to true to enable Application Insights
+
+# API Keys Configuration
+openai_api_key = ""      # Add your OpenAI API key here
+perplexity_api_key = ""  # Add your Perplexity API key here
+
+# Tags
+tags = {
+  Project     = "NotT3Chat"
+  Environment = "prod"
+  ManagedBy   = "Terraform"
+  Owner       = "YourName"
+}
