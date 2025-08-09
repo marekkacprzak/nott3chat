@@ -1,7 +1,7 @@
 # Use the official .NET 9 runtime as base image with updated OS
 FROM mcr.microsoft.com/dotnet/aspnet:9.0-noble AS base
 WORKDIR /app
-EXPOSE 8080
+EXPOSE 80
 
 # Use the SDK image to build the application
 FROM mcr.microsoft.com/dotnet/sdk:9.0-noble AS build
