@@ -100,17 +100,14 @@ resource "random_password" "jwt_fallback" {
   special = true
 }
 
-# Grant Key Vault access to the managed identity (only when Key Vault is enabled)
-resource "azurerm_key_vault_access_policy" "app_service" {
-  count        = var.enable_key_vault ? 1 : 0
-  key_vault_id = var.key_vault_id
-  tenant_id    = azurerm_linux_web_app.main.identity[0].tenant_id
-  object_id    = azurerm_linux_web_app.main.identity[0].principal_id
-
-  secret_permissions = [
-    "Get",
-    "List"
-  ]
+# Grant Key Vault access to the managed identity via RBAC (more stable than access policies)
+resource "azurerm_role_assignment" "key_vault_secrets_user" {
+  count                = var.enable_key_vault ? 1 : 0
+  scope                = var.key_vault_id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = azurerm_linux_web_app.main.identity[0].principal_id
+  
+  depends_on = [azurerm_linux_web_app.main]
 }
 
 # Assign AcrPull role to the web app's managed identity for accessing the container registry

@@ -8,22 +8,16 @@ resource "azurerm_key_vault" "main" {
   sku_name                   = "standard"
   soft_delete_retention_days = 7
   purge_protection_enabled   = false
-
-  access_policy {
-    tenant_id = data.azurerm_client_config.current.tenant_id
-    object_id = data.azurerm_client_config.current.object_id
-
-    secret_permissions = [
-      "Get",
-      "List",
-      "Set",
-      "Delete",
-      "Purge",
-      "Recover"
-    ]
-  }
+  enable_rbac_authorization  = true
 
   tags = var.tags
+}
+
+# Grant admin access via RBAC instead of access policy
+resource "azurerm_role_assignment" "key_vault_admin" {
+  scope                = azurerm_key_vault.main.id
+  role_definition_name = "Key Vault Administrator"
+  principal_id         = data.azurerm_client_config.current.object_id
 }
 
 resource "azurerm_key_vault_secret" "jwt_secret" {

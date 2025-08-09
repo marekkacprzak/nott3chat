@@ -556,6 +556,7 @@ pnpm-lock.yaml
 
 # Local .terraform directories and files
 **/.terraform/*
+tfplan
 
 # .tfstate files - contains infrastructure state information
 *.tfstate
