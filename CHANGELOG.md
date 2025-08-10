@@ -5,7 +5,28 @@ All notable changes to NotT3Chat will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
 ## [Unreleased] - 2025-08
+
+### Changed (AzureAI branch)
+
+- **SignalR Authentication Refactor:**
+  - Desktop/Android now use cookies, iPhone uses Authorization header for SignalR. Fixes cross-origin cookie issues for mobile users.
+  - Frontend and backend updated to support dual-mode authentication (header/cookie) and robust token management.
+- **Deployment Automation:**
+  - New PowerShell deployment scripts (`deploy-azure.ps1`) for streamlined Azure provisioning and updates.
+- **Azure Key Vault Improvements:**
+  - Access rights and secret reading logic improved for reliability after key vault recreation.
+- **Docker Port Fix:**
+  - Backend Dockerfile now defaults to port 80 for compatibility with Azure App Service and local development.
+- **CORS and Key Vault Security:**
+  - Backend now reads only required secrets from Key Vault; CORS settings improved for security and SPA compatibility.
+- **Terraform Infrastructure:**
+  - Major addition: full Terraform scripts for Azure deployment, including modules for App Service, Key Vault, Static Web App, Storage Account, and more.
+- **Frontend Optimizations:**
+  - Bundle size reduced, Vite config improved, and ESLint rules updated for better code quality.
+- **General Bugfixes:**
+  - Error handling, logging, and chat event streaming improved across backend and frontend.
 
 ### Added
 - **🔍 Perplexity AI Integration**: Added comprehensive search capabilities with streaming support

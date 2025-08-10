@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
+import { isIos, setAccessTokenState, getAccessTokenState, clearTokens, setSignalRTokenState } from '../services/tokenStore.ts';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -31,82 +32,88 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
-  const fetchSignalRToken = useCallback(async (): Promise<string | null> => {
+  const fetchSignalRToken = useCallback(async (): Promise<boolean> => {
     try {
       const response = await api.post('/signalr-token');
-      if (response.data?.token) {
-        localStorage.setItem('signalRToken', response.data.token);
-        return response.data.token;
+      if (response.data?.success) {
+        const accessToken: string | undefined = response.data?.accessToken;
+        const expiresIn = response.data?.expiresIn as number | undefined;
+        if (accessToken) {
+          // Store for all platforms: iOS -> localStorage; non-iOS -> in-memory
+          setSignalRTokenState({
+            accessToken,
+            expiresAt: expiresIn ? Date.now() + expiresIn * 1000 : undefined,
+          });
+          console.debug('✅ SignalR token received', { mode: isIos() ? 'iOS-header' : 'desktop-header+cookie' });
+        }
+        if (!isIos()) {
+          console.debug('✅ SignalR token also secured in httpOnly cookie');
+        }
+        return true;
       }
     } catch (error) {
-      console.error('❌ Failed to get SignalR token:', error);
+      console.error('❌ Failed to get secure SignalR token:', error);
     }
-    return null;
+    return false;
   }, []);
+
 
   const checkAuth = useCallback(async (): Promise<void> => {
     try {
-      // Check if we have a stored token (for mobile devices)
-      const storedToken = localStorage.getItem('authToken');
-      if (storedToken) {
-        api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+      // Check authentication
+      if (isIos()) {
+        const state = getAccessTokenState();
+        if (!state?.accessToken) throw new Error('No token');
+        await api.get('/manage/info');
+      } else {
+        // Cookie-based
+        await api.get('/manage/info');
       }
+  // Ensure we have SignalR token for chat functionality before marking authenticated
+  await fetchSignalRToken();
+  setIsAuthenticated(true);
       
-      await api.get('/manage/info');
-      setIsAuthenticated(true);
-      
-      // Get SignalR token if we don't have one
-      if (!localStorage.getItem('signalRToken')) {
-        await fetchSignalRToken();
-      }
-      
-      console.log('✅ Authentication check successful');
+      console.debug('✅ Dual-token authentication check successful');
     } catch (error) {  
-      //console.warn('⚠️ Authentication check failed:', error?.response?.status);
-      
-      // If token auth fails, remove the invalid token
-      if (localStorage.getItem('authToken')) {
-        localStorage.removeItem('authToken');
-        delete api.defaults.headers.common['Authorization'];
-        console.log('🗑️ Removed invalid token');
-      }
-      
-      // Also remove SignalR token if auth fails
-      if (localStorage.getItem('signalRToken')) {
-        localStorage.removeItem('signalRToken');
-        console.log('🗑️ Removed invalid SignalR token');
-      }
-      
-      //setIsAuthenticated(false);
+      const axiosError = error as { response?: { status?: number } };
+      console.debug('⚠️ Authentication check failed:', axiosError?.response?.status);
+      setIsAuthenticated(false);
     } finally {
       setLoading(false);
     }
   }, [fetchSignalRToken]);
 
   const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    // Use token-based authentication as primary method (no mobile detection)
     try {
-      const tokenResponse = await api.post('/login?useCookies=false', { email, password });
-      
-      if (tokenResponse.data?.accessToken) {
-        // Store the token for future requests
-        localStorage.setItem('authToken', tokenResponse.data.accessToken);
-        
-        // Add token to default headers for future requests
-        api.defaults.headers.common['Authorization'] = `Bearer ${tokenResponse.data.accessToken}`;
-        
-        // Get SignalR JWT token
-        await fetchSignalRToken();
-        
-        setIsAuthenticated(true);
+      if (isIos()) {
+        // Use token-based login for iOS
+        const response = await api.post('/login', { email, password });
+        if (response.status === 200 && response.data?.accessToken) {
+          const { accessToken, refreshToken, expiresIn } = response.data;
+          const expiresAt = expiresIn ? Date.now() + expiresIn * 1000 : undefined;
+          setAccessTokenState({ accessToken, refreshToken, expiresAt });
+          // Fetch SignalR token before setting authenticated to ensure connection starts with token
+          await fetchSignalRToken();
+          setIsAuthenticated(true);
+          return { success: true };
+        }
+        throw new Error('Login failed');
+      }
 
+      // Non-iOS: cookie-based
+      const response = await api.post('/login?useCookies=true', { email, password });
+      
+      if (response.status === 200) {
+        // Get SignalR token first so connection starts with header/cookie present
+        await fetchSignalRToken();
+        setIsAuthenticated(true);
+        console.debug('✅ Dual-token authentication successful');
         return { success: true };
       } else {
-        console.error('❌ Token response missing accessToken:', tokenResponse.data);
-        throw new Error('Token not received from server');
+        throw new Error('Login failed');
       }
     } catch (error) {
-      console.error('❌ Token-based authentication failed:', error);
+      console.error('❌ Authentication failed:', error);
       
       let errorMessage: string;
       const axiosError = error as { response?: { status?: number; data?: { message?: string } } };
@@ -146,23 +153,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = useCallback(async (): Promise<void> => {
     try {
-      await api.post('/logout');
+      if (isIos()) {
+        clearTokens();
+      } else {
+        await api.post('/logout', {}, { withCredentials: true });
+      }
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      // Clear both cookie and token authentication
+      // Clear authentication state (cookies handled by server)
       setIsAuthenticated(false);
-      
-      // Remove stored token if it exists
-      if (localStorage.getItem('authToken')) {
-        localStorage.removeItem('authToken');
-        delete api.defaults.headers.common['Authorization'];
-      }
-      
-      // Remove SignalR token if it exists
-      if (localStorage.getItem('signalRToken')) {
-        localStorage.removeItem('signalRToken');
-      }
     }
   }, []);
 

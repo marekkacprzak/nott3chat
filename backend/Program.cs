@@ -1,40 +1,43 @@
-using Microsoft.AspNetCore.SignalR;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 using System.ComponentModel.DataAnnotations;
-using Serilog;
-using NotT3ChatBackend.Data;
-using NotT3ChatBackend.Models;
-using NotT3ChatBackend.Services;
-using NotT3ChatBackend.Hubs;
-using NotT3ChatBackend.DTOs;
-using Microsoft.AspNetCore.Http.HttpResults;
-using NotT3ChatBackend.Endpoints;
-using NotT3ChatBackend.Utils;
-using Microsoft.AspNetCore.Mvc;
+using System.IdentityModel.Tokens.Jwt;
+using System.Reflection;
+using System.Security.Claims;
+using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.RateLimiting;
 using Azure.AI.OpenAI;
 using Azure.Identity;
-using System.Text;
-using Azure.Security.KeyVault.Secrets;
-using System.Reflection;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
-using Serilog.Events;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
- 
+using NotT3ChatBackend;
+using NotT3ChatBackend.Data;
+using NotT3ChatBackend.DTOs;
+using NotT3ChatBackend.Endpoints;
+using NotT3ChatBackend.Hubs;
+using NotT3ChatBackend.Models;
+using NotT3ChatBackend.Services;
+using NotT3ChatBackend.Utils;
+using Serilog;
+using Serilog.Events;
+
 // This code is staying in one file for now as an intentional experiment for .NET 10's dotnet run app.cs feature,
 // but we are aware of the importance of separating so we are currently assigning regions to be split when the time is right.
 
+#region Main Program
 namespace NotT3ChatBackend
 {
-    #region Program.cs
     public class Program
     {
         public static async Task Main(string[] args)
@@ -46,40 +49,16 @@ namespace NotT3ChatBackend
             builder.Configuration.AddEnvironmentVariables();
             builder.Configuration.AddUserSecrets(Assembly.GetExecutingAssembly());
 
-            if (builder.Configuration["ASPNETCORE_ENVIRONMENT"] == "Production")
+            if (builder.Environment.IsProduction())
             {
-                if (!string.IsNullOrEmpty(builder.Configuration["KeyVaultName"]))
-                {
-                    builder.Configuration.AddAzureKeyVault(
-                        new Uri($"https://{builder.Configuration["KeyVaultName"]}.vault.azure.net/"),
-                        new DefaultAzureCredential());
-                }
                 builder.Services.AddApplicationInsightsTelemetry();
             }
+            builder.Host.UseCustomSerilog(builder.Environment);
 
-            builder.Host.UseSerilog((context, services, loggerConfiguration) =>
-            {
-                var config = loggerConfiguration
-                    .ReadFrom.Configuration(context.Configuration)
-                    .ReadFrom.Services(services)
-                    .Enrich.FromLogContext()
-                    .Enrich.WithProperty("Application", "NotT3ChatBackend")
-                    .Enrich.WithProperty("DeployTime", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"))
-                    .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName);
-                if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
-                {
-                    config.WriteTo.ApplicationInsights(
-                        context.Configuration["APPLICATIONINSIGHTS:CONNECTIONSTRING"],
-                        TelemetryConverter.Traces,
-                        restrictedToMinimumLevel: LogEventLevel.Information // You can adjust this level
-                    );
-                }
-            });
-
-            Console.WriteLine(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")); 
+            Console.WriteLine(builder.Configuration["ASPNETCORE_ENVIRONMENT"]);
             // Development path
             var connectionString = "Data Source=database.dat";
-            if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
+            if (builder.Environment.IsProduction())
             {
                 // Azure File Storage path for Linux production
                 var dbPath = "/mnt/azurefileshare/database.dat";
@@ -89,211 +68,61 @@ namespace NotT3ChatBackend
                     Directory.CreateDirectory(directory);
                 }
                 connectionString = $"Data Source={dbPath}";                
-                
                 //createa file in directory with "test" content
                 File.WriteAllText(Path.Combine(directory!, "test.txt"), DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"));
             }
+
             builder.Services.AddDbContext<AppDbContext>(opt =>
-            //  opt.UseInMemoryDatabase("DB"));
+                //  opt.UseInMemoryDatabase("DB"));
                 opt.UseSqlite(connectionString));
             builder.Services.AddMemoryCache();
             builder.Services.AddAuthorization();
             builder.Services.AddEndpointsApiExplorer();
             // Add CORS services
-            builder.Services.AddCors(options =>
-            {
-                // This is OSS project, feel free to update this for your own use-cases
-                if (builder.Environment.IsProduction())
-                {
-                    var webUrl = builder.Configuration["WebUrl"];
-                    if (string.IsNullOrWhiteSpace(webUrl))
-                        throw new InvalidOperationException("WebUrl must be set in configuration for Cors policy.");
-                    options.AddPolicy("OpenCorsPolicy", policy =>
-                    {
-                        policy.WithOrigins(webUrl)
-                              .AllowAnyHeader()
-                              .AllowAnyMethod()
-                              .AllowCredentials()
-                              .SetPreflightMaxAge(TimeSpan.FromSeconds(86400)); // Cache preflight for 24 hours
-                    });
-                }
-                else
-                {
-                    // Development CORS policy
-                    options.AddPolicy("OpenCorsPolicy", policy =>
-                    {
-                        policy.AllowAnyOrigin()
-                              .AllowAnyHeader()
-                              .AllowAnyMethod()
-                              .AllowCredentials()
-                              .SetPreflightMaxAge(TimeSpan.FromSeconds(86400)); // Cache preflight for 24 hours
-                    });
-                }
-            });
+            builder.Services.AddAllowedOriginsCors(builder.Environment, builder.Configuration);
+            
             builder.Services.AddIdentityApiEndpoints<NotT3User>()
-                        .AddRoles<IdentityRole>()
-                        .AddEntityFrameworkStores<AppDbContext>()
-                        .AddDefaultTokenProviders();
-            
+                .AddRoles<IdentityRole>()
+                .AddEntityFrameworkStores<AppDbContext>()
+                .AddDefaultTokenProviders();
+
             // Add JWT Bearer authentication for SignalR
-            var key = GetJwtSecretKey(builder.Configuration);
+            builder.Services.AddAuthentication().AddSignalRJwtBearer(builder.Configuration.GetJwtSecretKey());
+            builder.Services.ConfigureApplicationCookie(builder.Environment);
+            builder.Services.AddApplicationRateLimiter();
 
-            builder.Services.AddAuthentication()
-                .AddJwtBearer("SignalRBearer", options =>
-                {
-                    options.RequireHttpsMetadata = false;
-                    options.SaveToken = true;
-                    options.TokenValidationParameters = new TokenValidationParameters
-                    {
-                        ValidateIssuerSigningKey = true,
-                        IssuerSigningKey = new SymmetricSecurityKey(key),
-                        ValidateIssuer = false,
-                        ValidateAudience = false,
-                        ValidateLifetime = true,
-                        ClockSkew = TimeSpan.Zero
-                    };
-
-                    // Configure JWT authentication for SignalR WebSocket connections
-                    options.Events = new JwtBearerEvents
-                    {
-                        OnMessageReceived = context =>
-                        {
-                            var accessToken = context.Request.Query["access_token"];
-
-                            // If the request is for our hub...
-                            var path = context.HttpContext.Request.Path;
-                            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chat"))
-                            {
-                                // Read the token out of the query string
-                                context.Token = accessToken;
-                            }
-                            return Task.CompletedTask;
-                        }
-                    };
-                });
-
-            builder.Services.ConfigureApplicationCookie(options =>
-            {
-                if (builder.Environment.IsProduction())
-                {
-                    options.Cookie.SameSite = SameSiteMode.None;
-                    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-                }
-                options.Cookie.HttpOnly = true;
-                options.SlidingExpiration = true;
-                options.ExpireTimeSpan = TimeSpan.FromDays(1);
-            });
-
-            builder.Services.Configure<IdentityOptions>(options => {
-                // This is OSS project, feel free to update this for your own use-cases
-                options.SignIn.RequireConfirmedEmail = false;
-                options.User.RequireUniqueEmail = true;
-                options.Password.RequireNonAlphanumeric = false;
-                options.Password.RequireDigit = false;
-                options.Password.RequiredLength = 5;
-                options.Password.RequireLowercase = false;
-                options.Password.RequireUppercase = false;
-            });
-            
+            builder.Services.ConfigureIdentityPolicy();
             builder.Services.AddSignalR();
             builder.Services.AddSingleton<IOpenAiService, ChatService>();
             builder.Services.AddScoped<StreamingService>();
             builder.Services.AddScoped<IPerplexityService, PerplexityService>();
             builder.Services.AddHttpClient<IPerplexityService, PerplexityService>();
-            builder.Services.AddDataProtection().UseCryptographicAlgorithms(
-                new AuthenticatedEncryptorConfiguration
-                {
-                    EncryptionAlgorithm = EncryptionAlgorithm.AES_256_CBC,
-                    ValidationAlgorithm = ValidationAlgorithm.HMACSHA256
-                });
-            var app = builder.Build(); 
-
+            builder.Services.AddDataProtectionFromStorage(builder.Environment);
+            var app = builder.Build();
+         
             // Initialize database and create admin user
-            using (var scope = app.Services.CreateScope()) {
-                var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var userManager = scope.ServiceProvider.GetRequiredService<UserManager<NotT3User>>();
-                var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-                context.Database.EnsureCreated();
-#if DEBUG
-                logger.LogDebug("Creating debug admin user");
-                var adminUser = new NotT3User { UserName = "admin@example.com", Email = "admin@example.com" };
-                var result = userManager.CreateAsync(adminUser, "admin").Result;
-                if (result.Succeeded)
-                    logger.LogDebug("Admin user created successfully");
-                else
-                    logger.LogWarning("Failed to create admin user: {Errors}", string.Join(", ", result.Errors.Select(e => e.Description)));
-#endif
-            }
+            app.InitializeDatabase();
 
             var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
             appLogger.LogDebug("Configuring HTTP pipeline");
-            app.UseCors("OpenCorsPolicy");
-            
-            // Add CORS logging middleware
-            app.Use(async (context, next) =>
-            {
-                var corsLogger = context.RequestServices.GetRequiredService<ILogger<CorsLoggingMiddleware>>();
-                var origin = context.Request.Headers.Origin.FirstOrDefault();
-                if (!string.IsNullOrEmpty(origin))
-                {
-                    corsLogger.LogDebug("CORS request from origin: {Origin}", origin);
-                }
-                await next();
-            });
-            
+
+            app.AddHSTSToApp();
             app.UseRouting();
+            app.UseCors("OpenCorsPolicy"); // CORS must be after UseRouting
+            app.UseRateLimiter();
             app.UseAuthentication();
+            // Log 401 responses with request auth context
+            app.Add401Log();
             app.UseAuthorization();
 
             appLogger.LogDebug("Mapping endpoints");
-            app.MapGet("/health", (ILogger<Program> logger) =>
-            {
-                var testFileContent = DateTime.UtcNow.ToString("o");
-                if (false && Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
-                {
-                    var dbPath = "/mnt/azurefileshare/database.dat";
-                    var directory = Path.GetDirectoryName(dbPath);
-                    testFileContent = File.ReadAllText(Path.Combine(directory!, "test.txt"));
-                }
-                logger.LogDebug("Health check requested");
-                return TypedResults.Ok(testFileContent);
-            });
-            app.MapIdentityApi<NotT3User>();
-            app.MapPost("/logout", async (SignInManager<NotT3User> signInManager) => {
-                await signInManager.SignOutAsync();
-                return TypedResults.Ok();
-            }).RequireAuthorization();
-            
-            // JWT token endpoint for SignalR
-            app.MapPost("/signalr-token", async (UserManager<NotT3User> userManager, HttpContext context, IConfiguration configuration) => {
-                var user = await userManager.GetUserAsync(context.User);
-                if (user == null) {
-                    return Results.Unauthorized();
-                }
 
-                var key = GetJwtSecretKey(configuration);
-                var tokenHandler = new JwtSecurityTokenHandler();
-                var tokenDescriptor = new SecurityTokenDescriptor
-                {
-                    Subject = new ClaimsIdentity(new[]
-                    {
-                        new Claim(ClaimTypes.NameIdentifier, user.Id),
-                        new Claim(ClaimTypes.Name, user.UserName ?? user.Email ?? ""),
-                        new Claim(ClaimTypes.Email, user.Email ?? "")
-                    }),
-                    Expires = DateTime.UtcNow.AddDays(1),
-                    SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
-                };
-
-                var token = tokenHandler.CreateToken(tokenDescriptor);
-                var tokenString = tokenHandler.WriteToken(token);
-
-                return Results.Ok(new { token = tokenString });
-            }).RequireAuthorization();
+            app.MapAuthorizationEndpoints();
             app.MapModelEndpoints();
             app.MapChatEndpoints();
             app.Run();
         }
+
         public static Tuple<string, string> GenerateSecurityStamp(string password)
         {
             int length = 32;
@@ -305,52 +134,514 @@ namespace NotT3ChatBackend
             var hash = hasher.HashPassword(new NotT3User(), password);
             return new Tuple<string, string>(stamp, hash);
         }
-        public static async Task CreateUser(string userName, string email, string password, UserManager<NotT3User> userManager)
+
+        public static async Task CreateUser(string userName, string email, string password,
+            UserManager<NotT3User> userManager)
         {
             var user = new NotT3User { UserName = userName, Email = email };
             var result = await userManager.CreateAsync(user, password);
             if (!result.Succeeded)
             {
-                throw new Exception($"Failed to create user: {string.Join(", ", result.Errors.Select(e => e.Description))}");
+                throw new Exception(
+                    $"Failed to create user: {string.Join(", ", result.Errors.Select(e => e.Description))}");
             }
-        }
-        private static byte[] GetJwtSecretKey(IConfiguration configuration)
-        {
-            var jwtSecretKey = configuration["Jwt:SecretKey"] ?? "ThisIsAVeryLongSecretKeyForJWTTokenGeneration123456789";
-            return Encoding.ASCII.GetBytes(jwtSecretKey);
         }
     }
 }
+#endregion
 
+#region Startup/StartupExtensions.cs
 public static class Startup
 {
+    public static IHostBuilder UseCustomSerilog(this IHostBuilder builder, IWebHostEnvironment environment)
+    {
+        builder.UseSerilog((context, services, loggerConfiguration) =>
+        {
+            var config = loggerConfiguration
+                .ReadFrom.Configuration(context.Configuration)
+                .ReadFrom.Services(services)
+                .Enrich.FromLogContext()
+                .Enrich.WithProperty("Application", "NotT3ChatBackend")
+                .Enrich.WithProperty("DeployTime", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"))
+                .Enrich.WithProperty("Environment", environment.EnvironmentName);
+            if (context.HostingEnvironment.IsProduction())
+            {
+                config.WriteTo.ApplicationInsights(
+                    context.Configuration["APPLICATIONINSIGHTS:CONNECTIONSTRING"],
+                    TelemetryConverter.Traces,
+                    restrictedToMinimumLevel: LogEventLevel.Information // You can adjust this level
+                );
+            }
+        });
+        return builder;
+    }
+
+    public static IServiceCollection AddDataProtectionFromStorage(this IServiceCollection services,
+        IWebHostEnvironment environment)
+    {
+        if (environment.IsProduction())
+        {
+            services.AddDataProtection()
+                .PersistKeysToFileSystem(new DirectoryInfo("/mnt/azurefileshare/keys"))
+                .SetApplicationName("NotT3Chat")
+                .UseCryptographicAlgorithms(
+                    new AuthenticatedEncryptorConfiguration
+                    {
+                        EncryptionAlgorithm = EncryptionAlgorithm.AES_256_CBC,
+                        ValidationAlgorithm = ValidationAlgorithm.HMACSHA256
+                    });
+        }
+
+        return services;
+    }
+
+    public static IServiceCollection ConfigureIdentityPolicy(this IServiceCollection services)
+    {
+        services.Configure<IdentityOptions>(options =>
+        {
+            // This is OSS project, feel free to update this for your own use-cases
+            options.SignIn.RequireConfirmedEmail = false;
+            options.User.RequireUniqueEmail = true;
+            options.Password.RequireNonAlphanumeric = false;
+            options.Password.RequireDigit = false;
+            options.Password.RequiredLength = 5;
+            options.Password.RequireLowercase = false;
+            options.Password.RequireUppercase = false;
+        });
+        return services;
+    }
+
+    public static IServiceCollection AddApplicationRateLimiter(this IServiceCollection services)
+    {
+        services.AddRateLimiter(options =>
+        {
+            options.AddFixedWindowLimiter("api", configure =>
+            {
+                configure.PermitLimit = 100;
+                configure.Window = TimeSpan.FromMinutes(1);
+                configure.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+                configure.QueueLimit = 10;
+            });
+
+            options.AddFixedWindowLimiter("auth", configure =>
+            {
+                configure.PermitLimit = 10;
+                configure.Window = TimeSpan.FromMinutes(1);
+            });
+        });
+        return services;
+    }
+
+    public static IServiceCollection ConfigureApplicationCookie(this IServiceCollection services,
+        IWebHostEnvironment environment)
+    {
+        services.ConfigureApplicationCookie(options =>
+        {
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.Cookie.SameSite = SameSiteMode.None; // Must be None for cross-origin requests
+            options.Cookie.Name = "auth-token";
+            options.ExpireTimeSpan = TimeSpan.FromHours(24);
+            options.SlidingExpiration = true;
+            options.LoginPath = "/login";
+            options.LogoutPath = "/logout";
+
+            if (environment.IsProduction())
+            {
+                options.Cookie.Domain = null; // Let Azure handle domain
+            }
+
+            options.Events = new CookieAuthenticationEvents
+            {
+                OnValidatePrincipal = ctx =>
+                {
+                    var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                    logger.LogDebug("Auth(Cookie): ValidatePrincipal for {User} Path={Path}",
+                        ctx.Principal?.Identity?.Name, ctx.HttpContext.Request.Path);
+                    return Task.CompletedTask;
+                },
+                OnRedirectToLogin = ctx =>
+                {
+                    var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                    logger.LogDebug("Auth(Cookie): RedirectToLogin. OriginalPath={Path} RedirectUri={Redirect}",
+                        ctx.Request.Path, ctx.RedirectUri);
+                    return Task.CompletedTask;
+                },
+                OnSignedIn = ctx =>
+                {
+                    var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                    logger.LogDebug("Auth(Cookie): SignedIn {User}", ctx.Principal?.Identity?.Name);
+                    return Task.CompletedTask;
+                },
+                OnSigningOut = ctx =>
+                {
+                    var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                    logger.LogDebug("Auth(Cookie): SigningOut Path={Path}", ctx.HttpContext.Request.Path);
+                    return Task.CompletedTask;
+                }
+            };
+        });
+
+        return services;
+    }
+
+    public static IServiceCollection AddAllowedOriginsCors(this IServiceCollection services,
+        IWebHostEnvironment environment, IConfiguration configuration)
+    {
+        services.AddCors(options =>
+        {
+            // This is OSS project, feel free to update this for your own use-cases
+            if (environment.IsProduction())
+            {
+                var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+                if (allowedOrigins == null || allowedOrigins.Length == 0)
+                    throw new InvalidOperationException(
+                        "Cors:AllowedOrigins must be set in configuration for Cors policy.");
+                options.AddPolicy("OpenCorsPolicy", policy =>
+                {
+                    policy.WithOrigins(allowedOrigins)
+                        .AllowAnyHeader()
+                        .AllowAnyMethod()
+                        .AllowCredentials()
+                        .SetPreflightMaxAge(TimeSpan.FromSeconds(86400)); // Cache preflight for 24 hours
+                });
+            }
+            else
+            {
+                // Development CORS policy
+                options.AddPolicy("OpenCorsPolicy", policy =>
+                {
+                    policy.AllowAnyOrigin()
+                        .AllowAnyHeader()
+                        .AllowAnyMethod()
+                        .AllowCredentials()
+                        .SetPreflightMaxAge(TimeSpan.FromSeconds(86400)); // Cache preflight for 24 hours
+                });
+            }
+        });
+        return services;
+    }
+
+    public static byte[] GetJwtSecretKey(this IConfiguration configuration)
+    {
+        var jwtSecretKey = configuration["Jwt:SecretKey"] ??
+                           "ThisIsAVeryLongSecretKeyForJWTTokenGeneration123456789";
+        return Encoding.ASCII.GetBytes(jwtSecretKey);
+    }
+
+    public static Microsoft.AspNetCore.Authentication.AuthenticationBuilder AddSignalRJwtBearer(
+        this Microsoft.AspNetCore.Authentication.AuthenticationBuilder builder,
+        byte[] key)
+    {
+        return builder.AddJwtBearer("SignalRBearer", options =>
+        {
+            options.RequireHttpsMetadata = false;
+            options.SaveToken = true;
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(key),
+                ValidateIssuer = false,
+                ValidateAudience = false,
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.Zero
+            };
+
+            // Configure JWT authentication ONLY for SignalR WebSocket connections
+            options.Events = new JwtBearerEvents
+            {
+                OnMessageReceived = context =>
+                {
+                    // Handle SignalR endpoints (/chat and /chat/negotiate) - API uses .NET Identity cookies
+                    var path = context.HttpContext.Request.Path;
+                    if (path.StartsWithSegments("/chat"))
+                    {
+                        var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                        // Priority: Authorization header -> access_token query -> cookie
+                        var authHeader = context.HttpContext.Request.Headers["Authorization"].ToString();
+                        if (!string.IsNullOrEmpty(authHeader) &&
+                            authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                        {
+                            context.Token = authHeader.Substring("Bearer ".Length).Trim();
+                            logger.LogDebug(
+                                "Auth(JWT): Using Authorization header for SignalR. Path={Path} UA={UA}", path,
+                                context.HttpContext.Request.Headers["User-Agent"].ToString());
+                        }
+                        else if (context.Request.Query.TryGetValue("access_token", out var accessToken) &&
+                                 accessToken.Count > 0)
+                        {
+                            context.Token = accessToken.ToString();
+                            logger.LogDebug(
+                                "Auth(JWT): Using access_token query for SignalR. Path={Path} UA={UA}", path,
+                                context.HttpContext.Request.Headers["User-Agent"].ToString());
+                        }
+                        else
+                        {
+                            // Use SignalR-specific token cookie (httpOnly, secure)
+                            var signalRToken = context.HttpContext.Request.Cookies["signalr-token"];
+                            if (!string.IsNullOrEmpty(signalRToken))
+                            {
+                                context.Token = signalRToken;
+                                logger.LogDebug(
+                                    "Auth(JWT): Using signalr-token cookie for SignalR. Path={Path} UA={UA}",
+                                    path, context.HttpContext.Request.Headers["User-Agent"].ToString());
+                            }
+                            else
+                            {
+                                logger.LogWarning(
+                                    "Auth(JWT): No token found for SignalR. Will likely 401. Path={Path} Origin={Origin} Referer={Referer}",
+                                    path, context.HttpContext.Request.Headers["Origin"].ToString(),
+                                    context.HttpContext.Request.Headers["Referer"].ToString());
+                            }
+                        }
+                    }
+
+                    return Task.CompletedTask;
+                },
+                OnAuthenticationFailed = ctx =>
+                {
+                    var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                    logger.LogError(ctx.Exception, "Auth(JWT): Authentication failed. Path={Path} UA={UA}",
+                        ctx.HttpContext.Request.Path, ctx.HttpContext.Request.Headers["User-Agent"].ToString());
+                    return Task.CompletedTask;
+                },
+                OnTokenValidated = ctx =>
+                {
+                    var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                    var nameId = ctx.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                    logger.LogInformation("Auth(JWT): Token validated for user {UserId}. Path={Path}", nameId,
+                        ctx.HttpContext.Request.Path);
+                    return Task.CompletedTask;
+                },
+                OnChallenge = ctx =>
+                {
+                    var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                    logger.LogWarning("Auth(JWT): Challenge issued. Path={Path} Scheme={Scheme}",
+                        ctx.Request.Path, ctx.Scheme);
+                    return Task.CompletedTask;
+                }
+            };
+        });
+    }
+
+
+    public static void InitializeDatabase(this WebApplication app)
+    {
+        using (var scope = app.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<NotT3User>>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            context.Database.EnsureCreated();
+#if DEBUG
+            logger.LogDebug("Creating debug admin user");
+            var adminUser = new NotT3User { UserName = "admin@example.com", Email = "admin@example.com" };
+            var result = userManager.CreateAsync(adminUser, "admin").Result;
+            if (result.Succeeded)
+                logger.LogDebug("Admin user created successfully");
+            else
+                logger.LogWarning("Failed to create admin user: {Errors}",
+                    string.Join(", ", result.Errors.Select(e => e.Description)));
+#endif
+        }
+    }
+
+    public static void AddHSTSToApp(this WebApplication app)
+    {
+        // Add CORS logging middleware
+        app.Use(async (context, next) =>
+        {
+            var corsLogger = context.RequestServices.GetRequiredService<ILogger<CorsLoggingMiddleware>>();
+            var origin = context.Request.Headers.Origin.FirstOrDefault();
+            if (!string.IsNullOrEmpty(origin))
+            {
+                corsLogger.LogDebug("CORS request from origin: {Origin}", origin);
+            }
+
+            await next();
+        });
+
+        app.Use(async (context, next) =>
+        {
+            context.Response.Headers.Append("X-Frame-Options", "DENY");
+            context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+            context.Response.Headers.Append("X-XSS-Protection", "1; mode=block");
+            context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+            context.Response.Headers.Append("Content-Security-Policy",
+                "default-src 'self'; frame-ancestors 'none'; object-src 'none';");
+
+            // Don't add HSTS - Azure App Service handles this
+            await next();
+        });
+    }
+
+    public static void Add401Log(this WebApplication app)
+    {
+        // Log 401 responses with request auth context
+        app.Use(async (context, next) =>
+        {
+            await next();
+            if (context.Response.StatusCode == 401)
+            {
+                var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+                var hasAuthHeader = context.Request.Headers.ContainsKey("Authorization");
+                var authHeaderLen = hasAuthHeader ? context.Request.Headers["Authorization"].ToString().Length : 0;
+                var hasCookieAuth = context.Request.Cookies.ContainsKey("auth-token");
+                var hasSignalRToken = context.Request.Cookies.ContainsKey("signalr-token");
+                logger.LogWarning(
+                    "Auth(401): Path={Path} Method={Method} HasAuthHeader={HasAuthHeader} AuthHeaderLen={Len} HasAuthCookie={HasCookie} HasSignalRCookie={HasSignalR} Origin={Origin} Referer={Referer}",
+                    context.Request.Path,
+                    context.Request.Method,
+                    hasAuthHeader,
+                    authHeaderLen,
+                    hasCookieAuth,
+                    hasSignalRToken,
+                    context.Request.Headers["Origin"].ToString(),
+                    context.Request.Headers["Referer"].ToString());
+            }
+        });
+    }
 }
 
 public class CorsLoggingMiddleware
 {
     // Marker class for logging
 }
+ 
 #endregion
 
 namespace NotT3ChatBackend.Endpoints
 {
+    #region Endpoints/MapAuthorizationEndpoints.cs
+
+    public class AuthorizationEndpointsMarker;
+    public static class AuthorizationEndpoints
+    {
+        public static void MapAuthorizationEndpoints(this IEndpointRouteBuilder app)
+        {
+            app.MapGet("/health", (ILogger<Program> logger) =>
+            {
+                var testFileContent = DateTime.UtcNow.ToString("o");
+                if (false && Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production")
+                {
+                    var dbPath = "/mnt/azurefileshare/database.dat";
+                    var directory = Path.GetDirectoryName(dbPath);
+                    testFileContent = File.ReadAllText(Path.Combine(directory!, "test.txt"));
+                }
+
+                logger.LogDebug("Health check requested");
+                return TypedResults.Ok(testFileContent);
+            }).RequireRateLimiting("api");
+
+            app.MapIdentityApi<NotT3User>();
+            app.MapPost("/logout", async (SignInManager<NotT3User> signInManager, HttpContext context) =>
+            {
+                await signInManager.SignOutAsync();
+
+                // Clear the httpOnly cookies
+                context.Response.Cookies.Delete("auth-token", new CookieOptions
+                {
+                    HttpOnly = true,
+                    Secure = true,
+                    SameSite = SameSiteMode.None
+                });
+
+                context.Response.Cookies.Delete("signalr-token", new CookieOptions
+                {
+                    HttpOnly = true,
+                    Secure = true,
+                    SameSite = SameSiteMode.None,
+                    Path = "/chat"
+                });
+
+                return TypedResults.Ok();
+            }).RequireAuthorization().RequireRateLimiting("auth");
+
+            // Secure SignalR token endpoint - generates JWT for chat connections
+            app.MapPost("/signalr-token",
+                async (UserManager<NotT3User> userManager, HttpContext context, IConfiguration configuration) =>
+                {
+                    var user = await userManager.GetUserAsync(context.User);
+                    if (user == null)
+                    {
+                        return Results.Unauthorized();
+                    }
+
+                    // Generate JWT token specifically for SignalR with longer expiration
+                    var key = configuration.GetJwtSecretKey();
+                    var tokenHandler = new JwtSecurityTokenHandler();
+                    var tokenDescriptor = new SecurityTokenDescriptor
+                    {
+                        Subject = new ClaimsIdentity(new[]
+                        {
+                            new Claim(ClaimTypes.NameIdentifier, user.Id),
+                            new Claim(ClaimTypes.Name, user.UserName ?? user.Email ?? ""),
+                            new Claim(ClaimTypes.Email, user.Email ?? ""),
+                            new Claim("purpose", "signalr") // Mark as SignalR-specific token
+                        }),
+                        Expires = DateTime.UtcNow.AddDays(1), // Longer-lived for persistent connections
+                        SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key),
+                            SecurityAlgorithms.HmacSha256Signature)
+                    };
+
+                    var token = tokenHandler.CreateToken(tokenDescriptor);
+                    var tokenString = tokenHandler.WriteToken(token);
+
+                    // Set secure httpOnly cookie for SignalR token
+                    context.Response.Cookies.Append("signalr-token", tokenString, new CookieOptions
+                    {
+                        HttpOnly = true,
+                        Secure = true,
+                        SameSite = SameSiteMode.None, // Must be None for cross-origin
+                        Expires = DateTimeOffset.UtcNow.AddDays(1),
+                        Path = "/chat" // Restrict to SignalR endpoints only
+                    });
+
+                    return Results.Ok(new
+                        { success = true, accessToken = tokenString, tokenType = "Bearer", expiresIn = 86400 });
+                }).RequireAuthorization().RequireRateLimiting("api");
+
+        }
+    }
+
+    #endregion
+
     #region Endpoints/ChatEndpoints.cs
     public class ChatEndpointsMarker;
     public static class ChatEndpoints
     {
         public static void MapChatEndpoints(this IEndpointRouteBuilder app)
         {
-            app.MapHub<ChatHub>("/chat").RequireAuthorization(policy =>
+            app.MapHub<ChatHub>("/chat")
+                .RequireAuthorization(policy =>
+                {
+                    policy.RequireAuthenticatedUser();
+                    policy.AuthenticationSchemes.Add("SignalRBearer"); // SignalR uses JWT from signalr-token cookie
+                });
+            app.MapPost("/chats/new", NewChat).RequireAuthorization(policy =>
             {
                 policy.RequireAuthenticatedUser();
                 policy.AuthenticationSchemes.Add(IdentityConstants.ApplicationScheme);
                 policy.AuthenticationSchemes.Add(IdentityConstants.BearerScheme);
-                policy.AuthenticationSchemes.Add("SignalRBearer"); // Add our custom JWT scheme for SignalR
             });
-            app.MapPost("/chats/new", NewChat).RequireAuthorization();
-            app.MapPost("/chats/fork", ForkChat).RequireAuthorization();
-            app.MapDelete("/chats/{conversationId}", DeleteChat).RequireAuthorization();
-            app.MapGet("/chats", GetChats).RequireAuthorization();
+            app.MapPost("/chats/fork", ForkChat).RequireAuthorization(policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.AuthenticationSchemes.Add(IdentityConstants.ApplicationScheme);
+                policy.AuthenticationSchemes.Add(IdentityConstants.BearerScheme);
+            });
+            app.MapDelete("/chats/{conversationId}", DeleteChat).RequireAuthorization(policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.AuthenticationSchemes.Add(IdentityConstants.ApplicationScheme);
+                policy.AuthenticationSchemes.Add(IdentityConstants.BearerScheme);
+            });
+            app.MapGet("/chats", GetChats).RequireAuthorization(policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.AuthenticationSchemes.Add(IdentityConstants.ApplicationScheme);
+                policy.AuthenticationSchemes.Add(IdentityConstants.BearerScheme);
+            });
             app.MapPost("/register-user", RegisterUser);
         }
 
@@ -1492,7 +1783,7 @@ namespace NotT3ChatBackend.DTOs {
     #endregion
 
     #region DTOs/ForkChatRequestDTO.cs
-    public record ForkChatRequestDTO(string ConversationId, string MessageId);
+    public record ForkChatRequestDTO([Required][StringLength(100)] string ConversationId, [Required][StringLength(100)] string MessageId);
     #endregion
 
     #region DTOs/ChatModelDto.cs
@@ -1504,18 +1795,28 @@ namespace NotT3ChatBackend.DTOs {
     #region DTOs/PerplexityDTOs.cs
     public class PerplexitySearchRequest
     {
+        [Required]
+        [StringLength(1000, MinimumLength = 1)]
         public string Query { get; set; } = string.Empty;
+        
+        [StringLength(50)]
         public string? SearchRecencyFilter { get; set; }
         
+        [StringLength(100)]
         public string? SearchDomainFilter { get; set; }
+        
+        [StringLength(50)]
         public string? SearchMode { get; set; }
         public bool? ShowThinking { get; set; }
     }
 
     public class PerplexityDeepResearchRequest
     {
+        [Required]
+        [StringLength(1000, MinimumLength = 1)]
         public string Query { get; set; } = string.Empty;
         
+        [StringLength(50)]
         public string? ReasoningEffort { get; set; }
     }
 
@@ -1582,8 +1883,9 @@ namespace NotT3ChatBackend.DTOs {
     #endregion
 
     #region DTOs/RegisterUserRequestDTO.cs
-    public record RegisterUserRequestDto(string Username, string UserEmail, string Password);
+    public record RegisterUserRequestDto([Required][StringLength(50)] string Username, [Required][EmailAddress] string UserEmail, [Required][StringLength(100, MinimumLength = 12)] string Password);
     #endregion
+
 }
 
 namespace NotT3ChatBackend.Utils {

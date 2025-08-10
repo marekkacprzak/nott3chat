@@ -37,6 +37,12 @@ resource "azurerm_linux_web_app" "main" {
     
     # Use managed identity for ACR authentication
     container_registry_use_managed_identity = true
+    
+    # CORS configuration
+    cors {
+      allowed_origins     = [var.web_url]
+      support_credentials = true
+    }
   }
 
   storage_account {
@@ -57,9 +63,8 @@ resource "azurerm_linux_web_app" "main" {
     "WEBSITES_CONTAINER_START_TIME_LIMIT"       = "1800"
     "ConnectionStrings__DefaultConnection"     = "Data Source=/mnt/azurefileshare/database.dat"
   }, var.enable_key_vault ? {
-    # Key Vault enabled - use Key Vault references and name
-    "KeyVaultName"     = var.key_vault_name
-    "JwtSecretKeyReference"   = var.jwt_secret_reference
+    # Key Vault enabled - use Key Vault references
+    "Jwt__SecretKey"   = var.jwt_secret_reference
   } : {
     # Key Vault disabled - generate JWT secret
     "Jwt__SecretKey"   = random_password.jwt_fallback[0].result
@@ -67,18 +72,18 @@ resource "azurerm_linux_web_app" "main" {
     "APPLICATIONINSIGHTS_CONNECTION_STRING" = var.app_insights_connection_string
   } : {}, var.enable_key_vault && var.openai_secret_reference != "" ? {
     # OpenAI key from Key Vault
-    "OpenAIApiKeyReference" = var.openai_secret_reference
+    "OpenAI__ApiKey" = var.openai_secret_reference
   } : !var.enable_key_vault && var.openai_api_key != "" ? {
     # OpenAI key from environment variable
     "OpenAI__ApiKey" = var.openai_api_key
   } : {}, var.enable_key_vault && var.perplexity_secret_reference != "" ? {
     # Perplexity key from Key Vault
-    "PerplexityApiKeyReference" = var.perplexity_secret_reference
+    "Perplexity__ApiKey" = var.perplexity_secret_reference
   } : !var.enable_key_vault && var.perplexity_api_key != "" ? {
     # Perplexity key from environment variable
     "Perplexity__ApiKey" = var.perplexity_api_key
   } : {}, var.web_url != "" ? {
-    "WebUrl" = var.web_url
+    "Cors__AllowedOrigins__0" = var.web_url
   } : {})
 
   tags = var.tags
@@ -95,17 +100,14 @@ resource "random_password" "jwt_fallback" {
   special = true
 }
 
-# Grant Key Vault access to the managed identity (only when Key Vault is enabled)
-resource "azurerm_key_vault_access_policy" "app_service" {
-  count        = var.enable_key_vault ? 1 : 0
-  key_vault_id = var.key_vault_id
-  tenant_id    = azurerm_linux_web_app.main.identity[0].tenant_id
-  object_id    = azurerm_linux_web_app.main.identity[0].principal_id
-
-  secret_permissions = [
-    "Get",
-    "List"
-  ]
+# Grant Key Vault access to the managed identity via RBAC (more stable than access policies)
+resource "azurerm_role_assignment" "key_vault_secrets_user" {
+  count                = var.enable_key_vault ? 1 : 0
+  scope                = var.key_vault_id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = azurerm_linux_web_app.main.identity[0].principal_id
+  
+  depends_on = [azurerm_linux_web_app.main]
 }
 
 # Assign AcrPull role to the web app's managed identity for accessing the container registry
