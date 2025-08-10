@@ -28,27 +28,36 @@ Why build another chat app? Two reasons:
 1.  To participate in the T3 Clone-a-thon and have some fun.
 2.  To lovingly poke at the T3 stack and demonstrate that a robust, type-safe, and high-performance application can be built with the glorious combination of **C# on the backend** and **TypeScript on the front**. It's a love letter to backend developers who appreciate strongly-typed languages and modern web development practices.
 
+
 ## ✨ Core Features
 
 This is far from just a "hello world" chat. We've packed in some serious features:
 
-*   **🤖 Azure OpenAI Integration:** Seamlessly integrated with Azure OpenAI services using credential-based authentication (no API keys required).
-*   **🔍 Perplexity Search Integration:** Advanced search capabilities through Perplexity AI for comprehensive research and information retrieval.
-*   **🏗️ Azure Infrastructure Automation:** Complete Terraform infrastructure-as-code for Azure deployment with configurable components:
-     * Linux App Service with Docker container support and Azure Container Registry integration
-     * Azure Key Vault for secure secrets management with managed identity authentication
-     * Azure Static Web Apps for frontend hosting
-     * Optional Windows redirect web app with .NET Framework 4.0 for nice dns name for the web app
-     * Azure Files storage mounting for persistent SQLite database storage
-*   **⚡ Blazing-Fast Real-Time Chat:** Built with the magic of **[SignalR](https://dotnet.microsoft.com/apps/aspnet/signalr)**, messages stream in real-time.
-*   **🔄 Advanced Stream Resumption:** Did you close your browser tab mid-stream? No problem. Re-open the chat, and the stream will pick up right where it left off.
-*   **🤝 Multi-Session Sync:** Open the same chat in multiple windows or on different devices, and watch the messages stream in perfect sync across all of them.
-*   **📝 Resizable Message Input:** Drag the top edge of the message input area to resize it for comfortable long-form writing - no height limits!
-*   **🔐 Authentication:** A login system to keep your chats private.
-*   **📜 Chat History:** All your conversations are saved and can be revisited anytime.
-*   **🌳 Conversation Branching:** Fork conversations at any point to explore different discussion paths.
-*   **🔄 Message Regeneration:** Regenerate AI responses with different models or parameters.
-*   **📊 Comprehensive Logging:** Detailed logging with Serilog for better debugging and monitoring.
+- [x] **🤖 Azure OpenAI Integration:** Seamlessly integrated with Azure OpenAI services using credential-based authentication (no API keys required).
+- [x] **🔍 Perplexity Search Integration:** Advanced search capabilities through Perplexity AI for comprehensive research and information retrieval.
+- [x] **🏗️ Azure Infrastructure Automation:** Complete Terraform infrastructure-as-code for Azure deployment with configurable components:
+  - Linux App Service with Docker container support and Azure Container Registry integration
+  - Azure Key Vault for secure secrets management with managed identity authentication
+  - Azure Static Web Apps for frontend hosting
+  - Optional Windows redirect web app with .NET Framework 4.0 for nice DNS name for the web app
+  - Azure Files storage mounting for persistent SQLite database storage
+- [x] **⚡ Blazing-Fast Real-Time Chat:** Built with the magic of **[SignalR](https://dotnet.microsoft.com/apps/aspnet/signalr)**, messages stream in real-time.
+- [x] **🔄 Advanced Stream Resumption:** Did you close your browser tab mid-stream? No problem. Re-open the chat, and the stream will pick up right where it left off.
+- [x] **🤝 Multi-Session Sync:** Open the same chat in multiple windows or on different devices, and watch the messages stream in perfect sync across all of them.
+- [x] **📝 Resizable Message Input:** Drag the top edge of the message input area to resize it for comfortable long-form writing - no height limits!
+- [x] **🔐 Authentication:** A login system to keep your chats private.
+- [x] **📜 Chat History:** All your conversations are saved and can be revisited anytime.
+- [x] **🌳 Conversation Branching:** Fork conversations at any point to explore different discussion paths.
+- [x] **🔄 Message Regeneration:** Regenerate AI responses with different models or parameters.
+- [x] **📊 Comprehensive Logging:** Detailed logging with Serilog for better debugging and monitoring.
+- [x] **SignalR Authentication Refactor:** Desktop/Android use cookies, iPhone uses Authorization header for SignalR. Dual-mode authentication and robust token management.
+- [x] **Deployment Automation:** PowerShell deployment scripts for streamlined Azure provisioning and updates.
+- [x] **Azure Key Vault Improvements:** Access rights and secret reading logic improved for reliability after key vault recreation.
+- [x] **Docker Port Fix:** Backend Dockerfile defaults to port 80 for compatibility with Azure App Service and local development.
+- [x] **CORS and Key Vault Security:** Backend reads only required secrets from Key Vault; CORS settings improved for security and SPA compatibility.
+- [x] **Terraform Infrastructure:** Full Terraform scripts for Azure deployment, including modules for App Service, Key Vault, Static Web App, Storage Account, and more.
+- [x] **Frontend Optimizations:** Bundle size reduced, Vite config improved, and ESLint rules updated for better code quality.
+- [x] **General Bugfixes:** Error handling, logging, and chat event streaming improved across backend and frontend.
 
 ## 🛠️ Tech Stack & How It Was Built
 
@@ -167,6 +176,7 @@ VITE_API_URL=http://localhost:80 pnpm run dev
 
 ---
 
+
 ## 🗺️ Roadmap & Future Features
 
 Here's a non-exhaustive list of what's planned when I get around to it:
@@ -178,16 +188,24 @@ Here's a non-exhaustive list of what's planned when I get around to it:
 - [x] Tools (Perplexity web search integration with streaming)
 - [ ] Image generation
 - [ ] Chat sharing via public links
-- [ ] Bring Your Own Key (BYOK) for API providers
+- [x] Bring Your Own Key (BYOK) for API providers
 - [x] Regenerate message (or regenerate with a different model)
 - [x] Delete chats
 - [ ] Delete individual messages?
 - [x] Intelligent, automatic naming for new chats
 - [x] Resizable message input area with drag-to-resize functionality
 - [ ] Search through threads
-- [ ] Make it prettier?
-- [ ] Thinking models
+- [x] Make it prettier?
+- [x] Thinking models
 - [x] Comprehensive logging with proper source context
+- [x] SignalR authentication refactor (desktop/android cookies, iPhone header)
+- [x] Deployment automation (PowerShell scripts)
+- [x] Azure Key Vault improvements
+- [x] Docker port fix
+- [x] CORS and Key Vault security improvements
+- [x] Terraform infrastructure for Azure
+- [x] Frontend optimizations (bundle size, Vite, ESLint)
+- [x] General bugfixes (error handling, logging, chat events)
 
 ---
 
@@ -221,6 +239,11 @@ To maintain consistency and code quality with TypeScript, we follow these stylin
 - [x] TypeScript conversion for better type safety on the frontend
 
 ---
+
+
+---
+
+
 
 ## 🤝 Contributing
 
