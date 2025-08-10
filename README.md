@@ -23,10 +23,13 @@ Welcome to **NotT3Chat** - a fully-featured, real-time chat application built fo
 
 ## 🤔 Why?
 
-Why build another chat app? Two reasons:
+Why build yet another chat app based on an existing proof of concept?
 
-1.  To participate in the T3 Clone-a-thon and have some fun.
-2.  To lovingly poke at the T3 stack and demonstrate that a robust, type-safe, and high-performance application can be built with the glorious combination of **C# on the backend** and **TypeScript on the front**. It's a love letter to backend developers who appreciate strongly-typed languages and modern web development practices.
+1.  To learn TypeScript by converting a previous JavaScript project.
+2.  To learn Azure by preparing a deployment script in Terraform.
+3.  To make the app mobile-friendly and optimized for mobile devices.
+4.  For fun.
+5.  To playfully challenge the T3 stack and show that a robust, type-safe, high-performance application can be built with the powerful combination of **C# on the backend** and **TypeScript on the frontend**. It's a love letter to backend developers who appreciate strongly-typed languages and modern web development practices.
 
 
 ## ✨ Core Features
@@ -96,39 +99,61 @@ The UI was mostly crafted with the help of **Claude Code**. Originally built in 
 
 ### 1. Launching the Backend
 
+
 The backend runs on port 80 by default (configured via Kestrel in appsettings.json):
 - **Both Development and Production**: `http://localhost:80`
 
 **Configuration:**
 
-The backend now uses Azure OpenAI with credential-based authentication. See the [Azure OpenAI Setup Guide](AZURE_SETUP.md) for detailed configuration instructions.
+The backend now uses Azure OpenAI with credential-based authentication. All Azure resources and configuration are provisioned automatically using the included Terraform scripts and PowerShell deployment script.
 
-**Quick Setup:**
+**Quick Setup (Terraform Automated):**
 
-1. **Azure OpenAI Resource**: Create an Azure OpenAI resource and deploy your models
-2. **Authentication**: Configure authentication (Azure CLI, Managed Identity, or Service Principal)
-3. **Configuration**: Update `appsettings.json` with your Azure OpenAI endpoint and model names
+1. **Clone the repository**
+2. **Install prerequisites:**
+   - [.NET SDK 9.0](https://dotnet.microsoft.com/download/dotnet/9.0)
+   - [Node.js v18+](https://nodejs.org/)
+   - [pnpm](https://pnpm.io/)
+   - [PowerShell](https://aka.ms/powershell)
+   - [Terraform](https://developer.hashicorp.com/terraform/downloads)
+   - [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
+3. **Configure your Azure credentials** (login with Azure CLI or set up a Service Principal)
+4. **Run the deployment script:**
+   - Open PowerShell and run:
+     ```pwsh
+     ./deploy-azure.ps1
+     ```
+   - This will provision all required Azure resources (App Service, Key Vault, Storage, Static Web App, etc.) and deploy the backend and frontend automatically.
+5. **Update configuration:**
+   - After deployment, Terraform will output the required endpoints and secrets. Update your `appsettings.json` and frontend `.env` file as needed.
 
+**Example appsettings.json (current):**
 ```json
 {
   "AzureOpenAI": {
-    "Endpoint": "https://your-resource-name.openai.azure.com/",
+    "Endpoint": "https://<your-openai-resource>.openai.azure.com/",
     "Models": ["gpt-4o-mini", "gpt-4o", "gpt-35-turbo"],
     "TitleModel": "gpt-4o-mini"
   },
   "Perplexity": {
-    "ApiKey": "your-perplexity-api-key-here" // Required for both search and streaming capabilities
+    "ApiKey": "<your-perplexity-api-key>"
+  },
+  "Cors": {
+    "AllowedOrigins": ["http://localhost:5173"]
   },
   "AllowedHosts": "*",
   "Kestrel": {
     "Endpoints": {
-      "MyHttpEndpoint": {
-        "Url": "http://0.0.0.0:80"
+      "Http": {
+        "Url": "http://0.0.0.0:5173"
       }
     }
   }
 }
 ```
+
+> **Note:**
+> - The `Cors:AllowedOrigins` setting controls which frontend origins are allowed to access the backend in production. For development, you can set it to `["http://localhost:5173"]` or add more domains as needed.
 
 **Debug Mode:**
 ```bash
