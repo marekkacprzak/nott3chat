@@ -290,34 +290,18 @@ public static class Startup
     {
         services.AddCors(options =>
         {
-            // This is OSS project, feel free to update this for your own use-cases
-            if (environment.IsProduction())
+            var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+            if (allowedOrigins == null || allowedOrigins.Length == 0)
+                throw new InvalidOperationException(
+                    "Cors:AllowedOrigins must be set in configuration for Cors policy.");
+            options.AddPolicy("OpenCorsPolicy", policy =>
             {
-                var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
-                if (allowedOrigins == null || allowedOrigins.Length == 0)
-                    throw new InvalidOperationException(
-                        "Cors:AllowedOrigins must be set in configuration for Cors policy.");
-                options.AddPolicy("OpenCorsPolicy", policy =>
-                {
-                    policy.WithOrigins(allowedOrigins)
-                        .AllowAnyHeader()
-                        .AllowAnyMethod()
-                        .AllowCredentials()
-                        .SetPreflightMaxAge(TimeSpan.FromSeconds(86400)); // Cache preflight for 24 hours
-                });
-            }
-            else
-            {
-                // Development CORS policy
-                options.AddPolicy("OpenCorsPolicy", policy =>
-                {
-                    policy.AllowAnyOrigin()
-                        .AllowAnyHeader()
-                        .AllowAnyMethod()
-                        .AllowCredentials()
-                        .SetPreflightMaxAge(TimeSpan.FromSeconds(86400)); // Cache preflight for 24 hours
-                });
-            }
+                policy.WithOrigins(allowedOrigins)
+                    .AllowAnyHeader()
+                    .AllowAnyMethod()
+                    .AllowCredentials()
+                    .SetPreflightMaxAge(TimeSpan.FromSeconds(86400)); // Cache preflight for 24 hours
+            });
         });
         return services;
     }

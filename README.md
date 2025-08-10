@@ -2,7 +2,7 @@
  <img src="stuff/logo.png" width="350" />
 
 
-Welcome to **NotT3Chat**, a fully-featured, real-time chat application built for the [cloneathon.t3.chat](https://cloneathon.t3.chat). This project serves as a testament to the raw power and elegance of C# and ASP.NET Core, proving that you don't need TypeScript to build amazing, modern web applications. (Sorry, Theo.)
+Welcome to **NotT3Chat** - a fully-featured, real-time chat application built for the . This project serves as a testament to the raw power and elegance of C# and ASP.NET Core, with TypeScript to build amazing, modern web applications.
 
 *   **📱 Mobile-Optimized Experience:** The entire application is optimized for mobile devices. Features include:
   * Prevents unwanted page scrolling and zooming on input focus
@@ -10,8 +10,8 @@ Welcome to **NotT3Chat**, a fully-featured, real-time chat application built for
   * Responsive layout and touch-friendly controls
   * Mobile console logger for debugging on iPhone and other devices
 
-> **🔥 NEW: Now powered by Azure OpenAI with credential-based authentication!**  
-> See [Azure OpenAI Setup Guide](AZURE_SETUP.md) for configuration details.
+> **🔥 NEW: Now powered by Azure OpenAI with credential-based authentication and one-command Azure deployment!**  
+> Deploy to Azure in minutes using the included `deploy-azure.ps1` script and full Terraform automation.
 
 > Too much bullshit just take me to [Getting Started](#-getting-started).
 
@@ -87,9 +87,12 @@ The UI was mostly crafted with the help of **Claude Code**. Originally built in 
 ### Prerequisites
 
 *   [.NET SDK 9.0](https://dotnet.microsoft.com/download/dotnet/9.0)
-    *   On Ubuntu 22+: `apt update && apt install dotnet-sdk-9.0`
+*   On Ubuntu 22+: `apt update && apt install dotnet-sdk-9.0`
 *   [Node.js v18+](https://nodejs.org/)
 *   [pnpm](https://pnpm.io/) (recommended package manager)
+*   [PowerShell](https://aka.ms/powershell) (required to run the Azure deployment script)
+*   [Terraform](https://developer.hashicorp.com/terraform/downloads) (required for infrastructure automation)
+*   [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) (required for authentication and resource management)
 
 ### 1. Launching the Backend
 
