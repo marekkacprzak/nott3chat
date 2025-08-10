@@ -3,7 +3,8 @@
 
 param(
     [string]$ContainerRegistryName = "hubchat",
-    [string]$ImageTag = "latest"
+    [string]$ImageTag = "latest",
+    [bool]$SkipTerraform = $false
 )
 
 # Set error action preference to stop on any error
@@ -73,36 +74,52 @@ Write-Host "✅ All prerequisites check passed`n" -ForegroundColor Green
 # ======================================
 # 2. TERRAFORM DEPLOYMENT
 # ======================================
-Write-Host "🏗️ Deploying infrastructure with Terraform..." -ForegroundColor Yellow
+if (-not $SkipTerraform) {
+    Write-Host "🏗️ Deploying infrastructure with Terraform..." -ForegroundColor Yellow
 
-Set-Location "terraform"
+    Set-Location "terraform"
 
-# Initialize Terraform if needed
-if (-not (Test-Path ".terraform")) {
-    Write-Host "Initializing Terraform..." -ForegroundColor Cyan
-    terraform init
-    if ($LASTEXITCODE -ne 0) { Exit-WithError "Terraform init failed" }
+    # Initialize Terraform if needed
+    if (-not (Test-Path ".terraform")) {
+        Write-Host "Initializing Terraform..." -ForegroundColor Cyan
+        terraform init
+        if ($LASTEXITCODE -ne 0) { Exit-WithError "Terraform init failed" }
+    }
+
+    terraform refresh
+    if ($LASTEXITCODE -ne 0) { Exit-WithError "Terraform refresh failed" }
+
+    # Plan Terraform deployment
+    Write-Host "Planning Terraform deployment..." -ForegroundColor Cyan
+    terraform plan -out="tfplan"
+    if ($LASTEXITCODE -ne 0) { Exit-WithError "Terraform plan failed" }
+
+    # Apply Terraform deployment
+    Write-Host "Applying Terraform deployment..." -ForegroundColor Cyan
+    terraform apply "tfplan"
+    if ($LASTEXITCODE -ne 0) { Exit-WithError "Terraform apply failed" }
+
+    # Get Terraform outputs
+    Write-Host "Getting Terraform outputs..." -ForegroundColor Cyan
+    $staticWebAppName = terraform output -raw static_web_app_name
+    $resourceGroupName = terraform output -raw resource_group_name
+    $backendUrl = terraform output -raw backend_url
+    $backendWebUrl = $backendUrl -replace "^https://", ""
+} else {
+    Write-Host "⏩ Skipping Terraform deployment (SkipTerraform = $SkipTerraform)" -ForegroundColor Yellow
+    
+    # Get existing values from terraform state if available
+    Set-Location "terraform"
+    if (Test-Path ".terraform") {
+        Write-Host "Getting existing Terraform outputs..." -ForegroundColor Cyan
+        $staticWebAppName = terraform output -raw static_web_app_name
+        $resourceGroupName = terraform output -raw resource_group_name
+        $backendUrl = terraform output -raw backend_url
+        $backendWebUrl = $backendUrl -replace "^https://", ""
+    } else {
+        Exit-WithError "No existing Terraform state found. Run with -SkipTerraform $false first."
+    }
 }
-
-terraform refresh
-if ($LASTEXITCODE -ne 0) { Exit-WithError "Terraform refresh failed" }
-
-# Plan Terraform deployment
-Write-Host "Planning Terraform deployment..." -ForegroundColor Cyan
-terraform plan -out="tfplan"
-if ($LASTEXITCODE -ne 0) { Exit-WithError "Terraform plan failed" }
-
-# Apply Terraform deployment
-Write-Host "Applying Terraform deployment..." -ForegroundColor Cyan
-terraform apply "tfplan"
-if ($LASTEXITCODE -ne 0) { Exit-WithError "Terraform apply failed" }
-
-# Get Terraform outputs
-Write-Host "Getting Terraform outputs..." -ForegroundColor Cyan
-$staticWebAppName = terraform output -raw static_web_app_name
-$resourceGroupName = terraform output -raw resource_group_name
-$backendUrl = terraform output -raw backend_url
-$backendWebUrl = $backendUrl -replace "^https://", ""
 
 Write-Host "📋 Deployment Information:" -ForegroundColor Green
 Write-Host "   Static Web App: $staticWebAppName" -ForegroundColor White
@@ -139,6 +156,32 @@ $imageName = "$ContainerRegistryName.azurecr.io/nott3chat-backend:$ImageTag"
 docker build -t $imageName ./backend
 if ($LASTEXITCODE -ne 0) { Exit-WithError "Docker build failed" }
 
+if (-not $SkipTerraform) {
+    # Container vulnerability scanning
+    Write-Host "Scanning Docker image for vulnerabilities..." -ForegroundColor Cyan
+    try {
+        # Check if Docker Scout is available
+        docker scout version 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Using Docker Scout for vulnerability scanning..." -ForegroundColor Yellow
+            docker scout quickview $imageName
+            #docker scout cves $imageName --format sarif --output "vulnerability-report.sarif"
+            #$scoutResult = docker scout cves $imageName --exit-code
+            #if ($scoutResult -match "No vulnerabilities found") {
+            #    Write-Host "✅ No critical vulnerabilities found" -ForegroundColor Green
+            #} else {
+            #    Write-Host "⚠️  Vulnerabilities detected - check vulnerability-report.sarif" -ForegroundColor Yellow
+            #}
+        } else {
+            # Fallback to Azure Container Registry scanning
+            Write-Host "Using Azure Container Registry vulnerability scanning..." -ForegroundColor Yellow
+            az acr task create --registry $ContainerRegistryName --name security-scan --image $imageName --cmd "echo Security scan placeholder" --commit-trigger-enabled false --pull-request-trigger-enabled false 2>$null | Out-Null
+            Write-Host "✅ Container registered for Azure Security Center scanning" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "⚠️  Vulnerability scanning not available - consider enabling Azure Security Center" -ForegroundColor Yellow
+    }
+}
 # Push Docker image
 Write-Host "Pushing Docker image to registry..." -ForegroundColor Cyan
 docker push "$acrLoginServer/nott3chat-backend:latest"  

@@ -20,12 +20,23 @@ resource "azurerm_role_assignment" "key_vault_admin" {
   principal_id         = data.azurerm_client_config.current.object_id
 }
 
+# Due to eventual consistency, RBAC permissions can take time to propagate.
+# Introduce a short delay after role assignment before creating secrets.
+resource "time_sleep" "wait_for_kv_rbac" {
+  depends_on = [azurerm_role_assignment.key_vault_admin]
+  create_duration = "30s"
+}
+
 resource "azurerm_key_vault_secret" "jwt_secret" {
   name         = "Jwt--SecretKey"
   value        = var.jwt_secret_key != "" ? var.jwt_secret_key : random_password.jwt_secret[0].result
   key_vault_id = azurerm_key_vault.main.id
 
-  depends_on = [azurerm_key_vault.main]
+  depends_on = [
+    azurerm_key_vault.main,
+    azurerm_role_assignment.key_vault_admin,
+    time_sleep.wait_for_kv_rbac
+  ]
 }
 
 resource "random_password" "jwt_secret" {
@@ -40,7 +51,11 @@ resource "azurerm_key_vault_secret" "openai_api_key" {
   value        = var.openai_api_key
   key_vault_id = azurerm_key_vault.main.id
 
-  depends_on = [azurerm_key_vault.main]
+  depends_on = [
+    azurerm_key_vault.main,
+    azurerm_role_assignment.key_vault_admin,
+    time_sleep.wait_for_kv_rbac
+  ]
 }
 
 resource "azurerm_key_vault_secret" "perplexity_api_key" {
@@ -49,5 +64,9 @@ resource "azurerm_key_vault_secret" "perplexity_api_key" {
   value        = var.perplexity_api_key
   key_vault_id = azurerm_key_vault.main.id
 
-  depends_on = [azurerm_key_vault.main]
+  depends_on = [
+    azurerm_key_vault.main,
+    azurerm_role_assignment.key_vault_admin,
+    time_sleep.wait_for_kv_rbac
+  ]
 }

@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useEffect,
   useCallback, useRef, useMemo } from 'react';
 import * as signalR from '@microsoft/signalr';
+import { isIos, getSignalRToken } from '@/services/tokenStore';
 import { useAuth } from './AuthContext';
 import { useChats } from './ChatContext';
 import { useNavigate } from 'react-router-dom';
@@ -148,6 +149,7 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
   }, [deleteChat]);
 
   const handleClose = useCallback(() => {
+  console.debug('[SignalR] onclose - connection closed');
     setIsConnected(false);
     setConnection(null);
   }, []);
@@ -284,35 +286,43 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
     setIsConnecting(true);
     setConnectionError(null);
 
-    const url = `${import.meta.env.VITE_API_URL}/chat`;
+  const url = `${import.meta.env.VITE_API_URL}/chat`;
 
-    const attemptConnection = () => {
+  const attemptConnection = () => {
       //console.log(`SignalR connection attempt ${connectionAttempts.current + 1}`);
       
-      // Check for stored SignalR JWT token (primary auth method)
-      const signalRToken = localStorage.getItem('signalRToken');
-      
-      let connectionOptions: signalR.IHttpConnectionOptions = {
-        withCredentials: true,
-        transport:
-          signalR.HttpTransportType.WebSockets |
-          signalR.HttpTransportType.LongPolling,
-        skipNegotiation: false,
-      };
-      
-      // Use accessTokenFactory for JWT token authentication (supports WebSockets)
-      if (signalRToken) {
-        connectionOptions.accessTokenFactory = () => {
-          // Always get the latest token from localStorage
-          const currentToken = localStorage.getItem('signalRToken');
-          return currentToken || '';
-        };
-      } else {
-        console.log('🚫 No SignalR JWT token found - cannot connect to SignalR');
-        return; // Don't attempt connection without proper token
-      }
-      
-      const newConnection = new signalR.HubConnectionBuilder()
+      // Auth options differ for iOS (header token) vs others (cookies)
+      const iOS = isIos();
+  // Fetch fresh token at each attempt
+  const iosSignalRToken = iOS ? getSignalRToken() : undefined;
+      console.debug('[SignalR] connecting', {
+        mode: iOS ? 'header-token' : 'cookies',
+        hasToken: Boolean(iosSignalRToken),
+        url,
+      });
+      const connectionOptions: signalR.IHttpConnectionOptions = iOS
+        ? {
+            accessTokenFactory: () => iosSignalRToken ?? '',
+            transport:
+              signalR.HttpTransportType.WebSockets |
+              signalR.HttpTransportType.LongPolling,
+            skipNegotiation: false,
+          }
+        : {
+            // Prefer header if we have token, but keep cookies too
+            accessTokenFactory: () => {
+              const t = getSignalRToken();
+              if (t) console.debug('[SignalR] non-iOS using header token');
+              return t ?? '';
+            },
+            withCredentials: true,
+            transport:
+              signalR.HttpTransportType.WebSockets |
+              signalR.HttpTransportType.LongPolling,
+            skipNegotiation: false,
+          };
+
+  const newConnection = new signalR.HubConnectionBuilder()
         .withUrl(url, connectionOptions)
         .withAutomaticReconnect({
           nextRetryDelayInMilliseconds: (retryContext: RetryContext) => {
@@ -328,28 +338,14 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
             ? signalR.LogLevel.Warning  // Production: Only warnings and errors
             : signalR.LogLevel.Information  // Development: Full logging
         )
-        .build();
+  .build();
 
       setupEventHandlers(newConnection);
       
       newConnection
         .start()
         .then(() => {
-          // let transportName = 'Unknown';
-          
-          // if (newConnection.connection?.transport?.constructor?.name) {
-          //   const constructorName = newConnection.connection.transport.constructor.name;
-          //   if (constructorName.includes('WebSocket')) {
-          //     transportName = 'WebSockets';
-          //   } else if (constructorName.includes('LongPolling')) {
-          //     transportName = 'Long Polling';
-          //   } else if (constructorName.includes('ServerSentEvents')) {
-          //     transportName = 'Server-Sent Events';
-          //   } else {
-          //     transportName = constructorName;
-          //   }
-          // }
-          console.debug(`✅ SignalR connection established successfully`);
+          console.debug('✅ SignalR connection established successfully');
 
           setConnection(newConnection);
           setIsConnected(true);
@@ -360,13 +356,14 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
         })
         .catch((error) => {
           console.error(`SignalR connection error (attempt ${connectionAttempts.current + 1}):`, error);
+          console.error('[SignalR] connection failed', { mode: iOS ? 'header-token' : 'cookies' });
           connectionAttempts.current++;
           setConnectionError(error.message);
           setIsConnecting(false);
           isInitializing.current = false;
           
           if (error.statusCode === 401) {
-            console.error('SignalR authentication failed - cookies may not be properly configured');
+            console.error('SignalR authentication failed - auth mode issue');
           }
 
           // If this is the first failure, wait 20 seconds before next attempt
@@ -376,7 +373,7 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
             }
             reconnectTimeoutRef.current = setTimeout(() => {
               attemptConnection();
-            }, 20000); // 20 seconds delay
+            }, 2000); // shorter retry
           }
         });
     };
