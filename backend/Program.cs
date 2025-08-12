@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.IdentityModel.Tokens.Jwt;
 using System.Reflection;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
@@ -111,6 +112,8 @@ namespace NotT3ChatBackend
             app.UseCors("OpenCorsPolicy"); // CORS must be after UseRouting
             app.UseRateLimiter();
             app.UseAuthentication();
+            // CSRF protection (double-submit cookie pattern) for cookie-authenticated unsafe requests
+            app.UseCsrfProtection();
             // Log 401 responses with request auth context
             app.Add401Log();
             app.UseAuthorization();
@@ -119,7 +122,7 @@ namespace NotT3ChatBackend
 
             app.MapAuthorizationEndpoints();
             app.MapModelEndpoints();
-            app.MapChatEndpoints();
+            app.MapChatEndpoints();            
             app.Run();
         }
 
@@ -258,6 +261,14 @@ public static class Startup
                     var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
                     logger.LogDebug("Auth(Cookie): ValidatePrincipal for {User} Path={Path}",
                         ctx.Principal?.Identity?.Name, ctx.HttpContext.Request.Path);
+                    // Ensure CSRF cookie exists for authenticated user
+                    if (ctx.Principal?.Identity?.IsAuthenticated == true &&
+                        !ctx.HttpContext.Request.Cookies.ContainsKey(CsrfConstants.CookieName))
+                    {
+                        var token = CsrfTokenGenerator.GenerateToken();
+                        ctx.HttpContext.Response.Cookies.Append(CsrfConstants.CookieName, token, CsrfConstants.CookieOptions);
+                        logger.LogDebug("CSRF: Token cookie issued during principal validation.");
+                    }
                     return Task.CompletedTask;
                 },
                 OnRedirectToLogin = ctx =>
@@ -271,6 +282,13 @@ public static class Startup
                 {
                     var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
                     logger.LogDebug("Auth(Cookie): SignedIn {User}", ctx.Principal?.Identity?.Name);
+                    // Issue CSRF token cookie on successful sign-in if missing
+                    if (!ctx.HttpContext.Request.Cookies.ContainsKey(CsrfConstants.CookieName))
+                    {
+                        var token = CsrfTokenGenerator.GenerateToken();
+                        ctx.HttpContext.Response.Cookies.Append(CsrfConstants.CookieName, token, CsrfConstants.CookieOptions);
+                        logger.LogDebug("CSRF: Token cookie issued on sign-in.");
+                    }
                     return Task.CompletedTask;
                 },
                 OnSigningOut = ctx =>
@@ -491,6 +509,115 @@ public class CorsLoggingMiddleware
 {
     // Marker class for logging
 }
+
+// ================= CSRF PROTECTION =================
+public static class CsrfConstants
+{
+    public const string CookieName = "XSRF-TOKEN"; // Non-HttpOnly cookie (double submit pattern)
+    public const string HeaderName = "X-CSRF-TOKEN"; // Header client must send matching cookie value
+    public static readonly CookieOptions CookieOptions = new CookieOptions
+    {
+        HttpOnly = false, // must be readable by JS to copy into header
+        Secure = true,
+        SameSite = SameSiteMode.None,
+        Path = "/",
+        IsEssential = true
+    };
+    public static readonly string[] UnsafeMethods = ["POST", "PUT", "PATCH", "DELETE"];    
+}
+
+public static class CsrfTokenGenerator
+{
+    public static string GenerateToken()
+    {
+        Span<byte> bytes = stackalloc byte[32];
+        RandomNumberGenerator.Fill(bytes);
+        return Convert.ToBase64String(bytes);
+    }
+}
+
+// Issues CSRF cookie for authenticated cookie-based sessions if missing
+public class CsrfIssueCookieMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<CsrfIssueCookieMiddleware> _logger;
+    public CsrfIssueCookieMiddleware(RequestDelegate next, ILogger<CsrfIssueCookieMiddleware> logger)
+    { _next = next; _logger = logger; }
+    public async Task InvokeAsync(HttpContext context)
+    {
+        if (context.User?.Identity?.IsAuthenticated == true &&
+            !context.Request.Cookies.ContainsKey(CsrfConstants.CookieName) &&
+            IsCookieAuth(context))
+        {
+            var token = CsrfTokenGenerator.GenerateToken();
+            context.Response.Cookies.Append(CsrfConstants.CookieName, token, CsrfConstants.CookieOptions);
+            _logger.LogDebug("CSRF: Issued token cookie via middleware.");
+        }
+        await _next(context);
+    }
+    private static bool IsCookieAuth(HttpContext ctx) => ctx.Request.Cookies.ContainsKey("auth-token") &&
+        !ctx.Request.Headers.ContainsKey("Authorization");
+}
+
+// Validates CSRF for unsafe methods on authenticated cookie-based requests
+public class CsrfValidationMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<CsrfValidationMiddleware> _logger;
+    private static readonly HashSet<string> _unsafe = new HashSet<string>(CsrfConstants.UnsafeMethods, StringComparer.OrdinalIgnoreCase);
+    private static readonly string[] _preAuthAllowPaths = ["/login", "/register-user"]; // allow unauthenticated login/register
+    public CsrfValidationMiddleware(RequestDelegate next, ILogger<CsrfValidationMiddleware> logger)
+    { _next = next; _logger = logger; }
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var method = context.Request.Method;
+        if (_unsafe.Contains(method))
+        {
+            var path = context.Request.Path.Value ?? string.Empty;
+            var isAuthenticated = context.User?.Identity?.IsAuthenticated == true;
+            if (isAuthenticated && IsCookieAuth(context))
+            {
+                var headerToken = context.Request.Headers[CsrfConstants.HeaderName].ToString();
+                var cookieToken = context.Request.Cookies[CsrfConstants.CookieName];
+                if (string.IsNullOrEmpty(headerToken) || string.IsNullOrEmpty(cookieToken) || !FixedTimeEquals(headerToken, cookieToken))
+                {
+                    _logger.LogWarning("CSRF: Validation failed. Path={Path} Method={Method} HeaderPresent={Header} CookiePresent={Cookie}", path, method, !string.IsNullOrEmpty(headerToken), !string.IsNullOrEmpty(cookieToken));
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new { error = "CSRF validation failed" });
+                    return;
+                }
+            }
+            else if (!isAuthenticated && _preAuthAllowPaths.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+            {
+                // allow login/register without CSRF (cannot issue token yet)
+            }
+            else if (!isAuthenticated)
+            {
+                // Unauthenticated unsafe method - let auth/authorization handle (likely 401)
+            }
+        }
+        await _next(context);
+    }
+    private static bool IsCookieAuth(HttpContext ctx) => ctx.Request.Cookies.ContainsKey("auth-token") &&
+        !ctx.Request.Headers.ContainsKey("Authorization");
+    private static bool FixedTimeEquals(string a, string b)
+    {
+        if (a.Length != b.Length) return false;
+        var result = 0;
+        for (int i = 0; i < a.Length; i++) result |= a[i] ^ b[i];
+        return result == 0;
+    }
+}
+
+public static class CsrfApplicationBuilderExtensions
+{
+    public static IApplicationBuilder UseCsrfProtection(this IApplicationBuilder app)
+    {
+        return app
+            .UseMiddleware<CsrfIssueCookieMiddleware>()
+            .UseMiddleware<CsrfValidationMiddleware>();
+    }
+}
  
 #endregion
 
@@ -536,6 +663,15 @@ namespace NotT3ChatBackend.Endpoints
                     Secure = true,
                     SameSite = SameSiteMode.None,
                     Path = "/chat"
+                });
+
+                // Clear CSRF token cookie (non-HttpOnly)
+                context.Response.Cookies.Delete(CsrfConstants.CookieName, new CookieOptions
+                {
+                    HttpOnly = false,
+                    Secure = true,
+                    SameSite = SameSiteMode.None,
+                    Path = "/"
                 });
 
                 return TypedResults.Ok();
@@ -585,6 +721,26 @@ namespace NotT3ChatBackend.Endpoints
                         { success = true, accessToken = tokenString, tokenType = "Bearer", expiresIn = 86400 });
                 }).RequireAuthorization().RequireRateLimiting("api");
 
+            // CSRF token retrieval endpoint for cross-site SPAs
+            app.MapGet("/csrf-token", (HttpContext ctx) =>
+            {
+                // Only for cookie-authenticated flows (no Authorization header)
+                var isCookieAuth = ctx.User?.Identity?.IsAuthenticated == true
+                                   && ctx.Request.Cookies.ContainsKey("auth-token")
+                                   && !ctx.Request.Headers.ContainsKey("Authorization");
+
+                if (!isCookieAuth)
+                    return Results.Unauthorized();
+
+                var token = ctx.Request.Cookies[CsrfConstants.CookieName];
+                if (string.IsNullOrEmpty(token))
+                {
+                    token = CsrfTokenGenerator.GenerateToken();
+                    ctx.Response.Cookies.Append(CsrfConstants.CookieName, token, CsrfConstants.CookieOptions);
+                }
+
+                return Results.Ok(new { token });
+            }).RequireAuthorization();
         }
     }
 

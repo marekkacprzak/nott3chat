@@ -175,10 +175,10 @@ dotnet publish/NotT3ChatBackend.dll
 dotnet publish/NotT3ChatBackend.dll --urls http://0.0.0.0:5555
 ```
 
-> A few warnings: 
-> 1. We use MemoryCache right now for synchronization, we will use Redis in the future but this means that it only works on a single server instance, no load balancer. 
-> 2. Cors policy right now is any domain allowed, feel free to change it yourself. 
-> 3. The password requirements are very minimal, feel free to change it yourself. 
+> A few warnings / notes: 
+> 1. We use MemoryCache right now for synchronization; a future version will use Redis for multi-instance scale-out. 
+> 2. CORS + CSRF: In development localhost:5173 is allowed; in production set `Cors:AllowedOrigins` accordingly. A double-submit cookie pattern (`XSRF-TOKEN` cookie + `X-CSRF-TOKEN` header) protects state-changing endpoints. 
+> 3. Password requirements are intentionally minimal for demo purposes—tighten them for real deployments. 
 
 ### 2. Launching the Frontend
 
