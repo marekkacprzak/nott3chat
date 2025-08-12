@@ -204,6 +204,43 @@ VITE_API_URL=http://localhost:80 pnpm run dev
 
 ---
 
+## 🔒 Security: CSRF protection
+
+This app protects cookie-based REST calls using the double‑submit cookie pattern.
+
+- What’s used
+  - Cookie: `XSRF-TOKEN` (non‑HttpOnly, `SameSite=None`, `Secure`).
+  - Header: `X-CSRF-TOKEN` must match the cookie for unsafe methods (POST/PUT/PATCH/DELETE).
+  - Applies only to cookie‑authenticated requests (desktop/mobile browsers using the Identity cookie). iOS uses Bearer tokens and is not subject to cookie CSRF checks.
+
+- Token issuance
+  - Issued automatically on successful sign‑in and principal validation.
+  - Middleware also ensures the cookie exists for authenticated users.
+  - Cross‑site SPAs can request the token via `GET /csrf-token` (requires an authenticated cookie session). This returns `{ token }` and also sets the cookie if missing.
+
+- Frontend behavior
+  - Axios request interceptor adds `X-CSRF-TOKEN` for unsafe methods.
+  - Same‑site: reads the `XSRF-TOKEN` cookie directly.
+  - Cross‑site: falls back to `GET /csrf-token` and caches it, then attaches it to the header.
+
+- SignalR
+  - Desktop: `POST /signalr-token` is CSRF‑protected; on success an httpOnly `signalr-token` cookie is set and used for WebSocket auth.
+  - iOS: uses Authorization Bearer tokens; no CSRF needed.
+
+- CORS notes
+  - Development allows `http://localhost:5173` with credentials.
+  - Production origins must be listed in `Cors:AllowedOrigins`.
+  - Ensure requests that rely on cookies include credentials; the backend allows custom headers including `X-CSRF-TOKEN`.
+
+- Logout behavior
+  - `/logout` clears `auth-token`, `signalr-token`, and `XSRF-TOKEN` cookies.
+
+- Troubleshooting
+  - 403 on `POST /signalr-token`: CSRF header missing or not matching; if cross‑site, call `GET /csrf-token` first and confirm cookies are `SameSite=None; Secure` and requests use `withCredentials`.
+  - 401 responses: the client clears cached CSRF and redirects to login; reauthenticate to re‑issue tokens.
+
+---
+
 
 ## 🗺️ Roadmap & Future Features
 
