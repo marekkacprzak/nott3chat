@@ -1,6 +1,14 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Box, Button, Container, Paper, TextField, Typography, Alert } from '@mui/material';
+import {
+  Box,
+  Button,
+  Container,
+  Paper,
+  TextField,
+  Typography,
+  Alert,
+} from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeSelector from './ThemeSelector';
 import './RegisterPage.css';
@@ -23,8 +31,11 @@ const RegisterPage = () => {
   }, [isAuthenticated, navigate]);
 
   // Check if passwords match whenever either password field changes
-  const passwordsMatch = useMemo(() => !confirmPassword || password === confirmPassword, [password, confirmPassword]);
-  
+  const passwordsMatch = useMemo(
+    () => !confirmPassword || password === confirmPassword,
+    [password, confirmPassword]
+  );
+
   // Email validation
   const isValidEmail = useMemo(() => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -35,17 +46,17 @@ const RegisterPage = () => {
   const isValidPassword = useMemo(() => {
     return !password || password.length >= 5;
   }, [password]);
-  
+
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      
+
       // Client-side validation
       if (!username || !email || !password || !confirmPassword) {
         setError('All fields are required');
         return;
       }
-      
+
       if (!isValidEmail) {
         setError('Please enter a valid email address');
         return;
@@ -55,7 +66,7 @@ const RegisterPage = () => {
         setError('Password must be at least 5 characters long');
         return;
       }
-      
+
       if (!passwordsMatch) {
         setError('Passwords do not match');
         return;
@@ -74,7 +85,17 @@ const RegisterPage = () => {
 
       setLoading(false);
     },
-    [username, email, password, confirmPassword, passwordsMatch, isValidEmail, isValidPassword, register, navigate]
+    [
+      username,
+      email,
+      password,
+      confirmPassword,
+      passwordsMatch,
+      isValidEmail,
+      isValidPassword,
+      register,
+      navigate,
+    ]
   );
 
   return (
@@ -90,7 +111,7 @@ const RegisterPage = () => {
       >
         <ThemeSelector variant="outlined" size="small" />
       </Box>
-      
+
       <Container component="main" maxWidth="xs">
         <Box className="main-container">
           <Paper elevation={3} className="register-paper">
@@ -133,7 +154,9 @@ const RegisterPage = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 error={!isValidEmail}
-                helperText={!isValidEmail ? "Please enter a valid email address" : ''}
+                helperText={
+                  !isValidEmail ? 'Please enter a valid email address' : ''
+                }
               />
               <TextField
                 margin="normal"
@@ -148,11 +171,11 @@ const RegisterPage = () => {
                 onChange={(e) => setPassword(e.target.value)}
                 error={password.length > 0 && !isValidPassword}
                 helperText={
-                  password.length > 0 && !isValidPassword 
-                    ? "Password must be at least 5 characters long" 
-                    : password.length === 0 
-                    ? "Minimum 5 characters required"
-                    : ''
+                  password.length > 0 && !isValidPassword
+                    ? 'Password must be at least 5 characters long'
+                    : password.length === 0
+                      ? 'Minimum 5 characters required'
+                      : ''
                 }
               />
               <TextField
@@ -174,11 +197,20 @@ const RegisterPage = () => {
                 fullWidth
                 variant="contained"
                 className="submit-button"
-                disabled={loading || !passwordsMatch || !isValidEmail || !isValidPassword || !username || !email || !password || !confirmPassword}
+                disabled={
+                  loading ||
+                  !passwordsMatch ||
+                  !isValidEmail ||
+                  !isValidPassword ||
+                  !username ||
+                  !email ||
+                  !password ||
+                  !confirmPassword
+                }
               >
                 {loading ? 'Registering...' : 'Register'}
               </Button>
-              
+
               <Box className="account-link-container">
                 <Typography variant="body2">
                   Already have an account?{' '}

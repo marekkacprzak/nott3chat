@@ -12,7 +12,7 @@ export const getCsrfToken = async (): Promise<string | undefined> => {
   })
     .then(async (r) => {
       if (!r.ok) return undefined;
-      const data = await r.json().catch(() => ({} as any));
+      const data = await r.json().catch(() => ({}) as any);
       cached = (data as any)?.token;
       return cached;
     })
@@ -24,4 +24,6 @@ export const getCsrfToken = async (): Promise<string | undefined> => {
   return inflight;
 };
 
-export const clearCsrfTokenCache = () => { cached = undefined; };
+export const clearCsrfTokenCache = () => {
+  cached = undefined;
+};

@@ -1,8 +1,19 @@
 import React from 'react';
 import { SelectChangeEvent } from '@mui/material/Select';
-import { FormControl, Select, MenuItem, Chip, Box, Typography, Tooltip } from '@mui/material';
-import { Palette as PaletteIcon, LightMode as LightModeIcon, 
-  DarkMode as DarkModeIcon } from '@mui/icons-material';
+import {
+  FormControl,
+  Select,
+  MenuItem,
+  Chip,
+  Box,
+  Typography,
+  Tooltip,
+} from '@mui/material';
+import {
+  Palette as PaletteIcon,
+  LightMode as LightModeIcon,
+  DarkMode as DarkModeIcon,
+} from '@mui/icons-material';
 import { useThemeMode } from '../contexts/ThemeContext';
 
 interface ThemeSelectorProps {
@@ -11,8 +22,17 @@ interface ThemeSelectorProps {
   showLabel?: boolean;
 }
 
-const ThemeSelector: React.FC<ThemeSelectorProps> = ({ variant = 'standard', size = 'small' }) => {
-  const { currentTheme, changeTheme, getAvailableThemes, getCurrentThemeConfig, themeVariants } = useThemeMode();
+const ThemeSelector: React.FC<ThemeSelectorProps> = ({
+  variant = 'standard',
+  size = 'small',
+}) => {
+  const {
+    currentTheme,
+    changeTheme,
+    getAvailableThemes,
+    getCurrentThemeConfig,
+    themeVariants,
+  } = useThemeMode();
   const availableThemes = getAvailableThemes();
   const currentConfig = getCurrentThemeConfig();
 
@@ -67,7 +87,9 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({ variant = 'standard', siz
           >
             {availableThemes.map((themeName) => (
               <MenuItem key={themeName} value={themeName}>
-                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                <Box
+                  sx={{ display: 'flex', alignItems: 'center', width: '100%' }}
+                >
                   {getThemeIcon(themeName)}
                   <Typography variant="body2" sx={{ flexGrow: 1 }}>
                     {themeName}

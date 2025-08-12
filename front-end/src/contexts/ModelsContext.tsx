@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+} from 'react';
 import { modelApi, Model } from '../services/modelApi';
 
 interface ModelsContextType {
@@ -69,13 +75,10 @@ export const ModelsProvider: React.FC<ModelsProviderProps> = ({ children }) => {
     error,
     selectedModel,
     setSelectedModel,
-    refreshModels
+    refreshModels,
   };
 
   return (
-    <ModelsContext.Provider value={value}>
-      {children}
-    </ModelsContext.Provider>
+    <ModelsContext.Provider value={value}>{children}</ModelsContext.Provider>
   );
 };
-

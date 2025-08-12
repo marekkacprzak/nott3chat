@@ -14,7 +14,7 @@ class ConsoleLoggerErrorBoundary extends React.Component<Props, State> {
     this.state = { hasError: false };
   }
 
-  static getDerivedStateFromError(): State {  
+  static getDerivedStateFromError(): State {
     return { hasError: true };
   }
 

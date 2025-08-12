@@ -1,6 +1,14 @@
 import React, { useState, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Box, Button, Container, Paper, TextField, Typography, Alert } from '@mui/material';
+import {
+  Box,
+  Button,
+  Container,
+  Paper,
+  TextField,
+  Typography,
+  Alert,
+} from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeSelector from './ThemeSelector';
 import './LoginPage.css';
@@ -46,7 +54,7 @@ const LoginPage = () => {
       >
         <ThemeSelector variant="outlined" size="small" />
       </Box>
-      
+
       <Container component="main" maxWidth="xs">
         <Box className="main-container">
           <Paper elevation={3} className="login-paper">
@@ -98,7 +106,7 @@ const LoginPage = () => {
               >
                 {loading ? 'Signing In...' : 'Sign In'}
               </Button>
-              
+
               <Box className="account-link-container">
                 <Typography variant="body2">
                   Don&apos;t have an account?{' '}

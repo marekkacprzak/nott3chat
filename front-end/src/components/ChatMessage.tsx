@@ -1,14 +1,13 @@
-
 import React, { useCallback, useMemo, useState } from 'react';
 import lcn from 'light-classnames';
-import { 
-  Box, 
-  Paper, 
-  Typography, 
-  CircularProgress, 
-  IconButton, 
-  Tooltip, 
-  Menu, 
+import {
+  Box,
+  Paper,
+  Typography,
+  CircularProgress,
+  IconButton,
+  Tooltip,
+  Menu,
   MenuItem,
   Chip,
   Dialog,
@@ -17,21 +16,24 @@ import {
   DialogContentText,
   DialogActions,
   Button,
-  useTheme
+  useTheme,
 } from '@mui/material';
-import { 
-  Person, 
-  SmartToy, 
-  ContentCopy, 
-  CallSplit, 
-  Refresh, 
-  KeyboardArrowDown 
+import {
+  Person,
+  SmartToy,
+  ContentCopy,
+  CallSplit,
+  Refresh,
+  KeyboardArrowDown,
 } from '@mui/icons-material';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import {
+  vscDarkPlus,
+  vs,
+} from 'react-syntax-highlighter/dist/esm/styles/prism';
 import js from 'react-syntax-highlighter/dist/esm/languages/prism/javascript';
 import ts from 'react-syntax-highlighter/dist/esm/languages/prism/typescript';
 
@@ -40,25 +42,23 @@ SyntaxHighlighter.registerLanguage('typescript', ts);
 import { useModels } from '../contexts/ModelsContext';
 import './ChatMessage.css';
 
-
 import type { LocalMessage } from '../Model/LocalMessage';
 
 interface ChatMessageProps {
   message: LocalMessage;
   selectedModel: string;
-   
+
   onSetSelectedModel: (model: string) => void;
-   
+
   onRegenerateMessage: (model: string, messageId: string) => Promise<void>;
-   
+
   onForkChat: (messageId: string) => Promise<void>;
   isLastMessage: boolean;
 }
 
 interface PendingRegenerate {
-   
   model: string;
-   
+
   messageId: string;
 }
 
@@ -69,22 +69,24 @@ const formatTime = (timestamp: Date): string => {
   });
 };
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ 
-  message, 
-  selectedModel, 
-  onSetSelectedModel, 
-  onRegenerateMessage, 
+const ChatMessage: React.FC<ChatMessageProps> = ({
+  message,
+  selectedModel,
+  onSetSelectedModel,
+  onRegenerateMessage,
   onForkChat,
-  isLastMessage
+  isLastMessage,
 }) => {
   const { models } = useModels();
   const theme = useTheme();
-  const [regenerateMenuAnchor, setRegenerateMenuAnchor] = useState<HTMLElement | null>(null);
+  const [regenerateMenuAnchor, setRegenerateMenuAnchor] =
+    useState<HTMLElement | null>(null);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
-  const [pendingRegenerate, setPendingRegenerate] = useState<PendingRegenerate | null>(null);
+  const [pendingRegenerate, setPendingRegenerate] =
+    useState<PendingRegenerate | null>(null);
   const isUser = useMemo(() => message.type === 'user', [message]);
   const isAssistant = useMemo(() => message.type === 'assistant', [message]);
-  
+
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(message.content);
   }, [message]);
@@ -93,35 +95,44 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     onForkChat(message.id);
   }, [onForkChat, message]);
 
-  const handleRegenerateDropdownClick = useCallback((event: React.MouseEvent<HTMLElement>) => {
-    event.stopPropagation();
-    setRegenerateMenuAnchor(event.currentTarget);
-  }, []);
+  const handleRegenerateDropdownClick = useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      event.stopPropagation();
+      setRegenerateMenuAnchor(event.currentTarget);
+    },
+    []
+  );
 
-  const handleRegenerate = useCallback((modelName: string, messageId: string) => {
-    if (isLastMessage) {
-      // If this is the last message, regenerate directly
-      onRegenerateMessage(modelName, messageId);
-    } else {
-      // If not the last message, show confirmation dialog
-      setPendingRegenerate({ model: modelName, messageId });
-      setConfirmDialogOpen(true);
-    }
-  }, [onRegenerateMessage, isLastMessage])
+  const handleRegenerate = useCallback(
+    (modelName: string, messageId: string) => {
+      if (isLastMessage) {
+        // If this is the last message, regenerate directly
+        onRegenerateMessage(modelName, messageId);
+      } else {
+        // If not the last message, show confirmation dialog
+        setPendingRegenerate({ model: modelName, messageId });
+        setConfirmDialogOpen(true);
+      }
+    },
+    [onRegenerateMessage, isLastMessage]
+  );
 
   const handleRegenerateClick = useCallback(() => {
     const modelToUse = message.chatModel || selectedModel;
     if (!modelToUse) return;
-    
+
     handleRegenerate(modelToUse, message.id);
   }, [message.chatModel, selectedModel, handleRegenerate, message.id]);
 
-  const handleRegenerateWithModel = useCallback((modelName: string) => {
-    onSetSelectedModel(modelName);
-    setRegenerateMenuAnchor(null);
-    
-    handleRegenerate(modelName, message.id);
-  }, [handleRegenerate, message.id, onSetSelectedModel]);
+  const handleRegenerateWithModel = useCallback(
+    (modelName: string) => {
+      onSetSelectedModel(modelName);
+      setRegenerateMenuAnchor(null);
+
+      handleRegenerate(modelName, message.id);
+    },
+    [handleRegenerate, message.id, onSetSelectedModel]
+  );
 
   const handleCloseRegenerateMenu = useCallback(() => {
     setRegenerateMenuAnchor(null);
@@ -164,16 +175,17 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
               incomplete: isAssistant && !message.isComplete,
             })}
             sx={{
-              backgroundColor: isUser 
-                ? theme.palette.primary.main 
+              backgroundColor: isUser
+                ? theme.palette.primary.main
                 : theme.palette.background.paper,
-              color: isUser 
-                ? theme.palette.primary.contrastText 
+              color: isUser
+                ? theme.palette.primary.contrastText
                 : theme.palette.text.primary,
               '&.assistant.incomplete': {
-                backgroundColor: theme.palette.mode === 'dark' 
-                  ? theme.palette.grey[800] 
-                  : theme.palette.grey[100],
+                backgroundColor:
+                  theme.palette.mode === 'dark'
+                    ? theme.palette.grey[800]
+                    : theme.palette.grey[100],
               },
             }}
           >
@@ -184,13 +196,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                 assistant: isAssistant,
               })}
               sx={{
-                backgroundColor: isUser 
-                  ? theme.palette.primary.dark 
-                  : theme.palette.mode === 'dark' 
-                    ? theme.palette.grey[700] 
+                backgroundColor: isUser
+                  ? theme.palette.primary.dark
+                  : theme.palette.mode === 'dark'
+                    ? theme.palette.grey[700]
                     : theme.palette.grey[200],
-                color: isUser 
-                  ? theme.palette.primary.contrastText 
+                color: isUser
+                  ? theme.palette.primary.contrastText
                   : theme.palette.text.primary,
               }}
             >
@@ -207,28 +219,46 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                   remarkPlugins={[remarkGfm]}
                   rehypePlugins={[rehypeHighlight]}
                   components={{
-                    code: (props: { className?: string; children?: React.ReactNode }) => {
+                    code: (props: {
+                      className?: string;
+                      children?: React.ReactNode;
+                    }) => {
                       const { className, children } = props;
                       const match = /language-(\\w+)/.exec(className || '');
                       const language = match ? match[1] : '';
-                      
+
                       // Properly extract text content from children
-                      const getTextContent = (node: React.ReactNode): string => {
+                      const getTextContent = (
+                        node: React.ReactNode
+                      ): string => {
                         if (typeof node === 'string') return node;
-                        if (Array.isArray(node)) return node.map(getTextContent).join('');
-                        if (node && typeof node === 'object' && node !== null && 'props' in node) {
-                          const element = node as React.ReactElement<{ children?: React.ReactNode }>;
+                        if (Array.isArray(node))
+                          return node.map(getTextContent).join('');
+                        if (
+                          node &&
+                          typeof node === 'object' &&
+                          node !== null &&
+                          'props' in node
+                        ) {
+                          const element = node as React.ReactElement<{
+                            children?: React.ReactNode;
+                          }>;
                           return getTextContent(element.props.children);
                         }
                         return '';
                       };
-                      
-                      const codeString = getTextContent(children).replace(/\\n$/, '');
-                      
+
+                      const codeString = getTextContent(children).replace(
+                        /\\n$/,
+                        ''
+                      );
+
                       return language ? (
                         <div className="markdown-code-block">
                           <SyntaxHighlighter
-                            style={theme.palette.mode === 'dark' ? vscDarkPlus : vs}
+                            style={
+                              theme.palette.mode === 'dark' ? vscDarkPlus : vs
+                            }
                             language={language}
                           >
                             {codeString}
@@ -244,8 +274,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                       <div className="markdown-pre">{children}</div>
                     ),
                     blockquote: ({ children }) => (
-                      <blockquote className="markdown-blockquote">{children}</blockquote>
-                    )
+                      <blockquote className="markdown-blockquote">
+                        {children}
+                      </blockquote>
+                    ),
                   }}
                 >
                   {message.content || ''}
@@ -278,10 +310,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             <Box className="message-footer">
               <Box className="message-meta">
                 {message.chatModel && (
-                  <Chip 
-                    label={message.chatModel} 
-                    size="small" 
-                    variant="outlined" 
+                  <Chip
+                    label={message.chatModel}
+                    size="small"
+                    variant="outlined"
                     className="model-chip"
                   />
                 )}
@@ -295,10 +327,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                   {formatTime(message.timestamp)}
                 </Typography>
               </Box>
-              
+
               {/* Action Icons for Assistant Messages */}
               {isAssistant && message.isComplete && (
-                <Box className={lcn("message-actions", {"force-visible": Boolean(regenerateMenuAnchor)})}>
+                <Box
+                  className={lcn('message-actions', {
+                    'force-visible': Boolean(regenerateMenuAnchor),
+                  })}
+                >
                   <Tooltip title="Copy">
                     <IconButton size="small" onClick={handleCopy}>
                       <ContentCopy fontSize="small" />
@@ -314,14 +350,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                       <Refresh fontSize="small" />
                     </IconButton>
                   </Tooltip>
-                  <IconButton 
-                    size="small" 
+                  <IconButton
+                    size="small"
                     onClick={handleRegenerateDropdownClick}
                     className="regenerate-dropdown"
                   >
                     <KeyboardArrowDown fontSize="small" />
                   </IconButton>
-                  
+
                   {/* Regenerate Model Selection Menu */}
                   <Menu
                     anchorEl={regenerateMenuAnchor}
@@ -337,8 +373,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                     }}
                   >
                     {models.map((model) => (
-                      <MenuItem 
-                        key={model.name} 
+                      <MenuItem
+                        key={model.name}
                         onClick={() => handleRegenerateWithModel(model.name)}
                         selected={model.name === selectedModel}
                       >
@@ -352,7 +388,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
           </Paper>
         </Box>
       </Box>
-      
+
       {/* Regenerate Confirmation Dialog */}
       <Dialog
         open={confirmDialogOpen}
@@ -365,9 +401,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         </DialogTitle>
         <DialogContent>
           <DialogContentText id="regenerate-dialog-description">
-            This will regenerate this message and <strong>delete all messages that come after it</strong> in the conversation. 
-            This action cannot be undone.
-            <br /><br />
+            This will regenerate this message and{' '}
+            <strong>delete all messages that come after it</strong> in the
+            conversation. This action cannot be undone.
+            <br />
+            <br />
             Are you sure you want to continue?
           </DialogContentText>
         </DialogContent>
@@ -375,7 +413,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
           <Button onClick={handleCancelRegenerate} color="primary">
             Cancel
           </Button>
-          <Button onClick={handleConfirmRegenerate} color="error" variant="contained">
+          <Button
+            onClick={handleConfirmRegenerate}
+            color="error"
+            variant="contained"
+          >
             Regenerate & Delete
           </Button>
         </DialogActions>
