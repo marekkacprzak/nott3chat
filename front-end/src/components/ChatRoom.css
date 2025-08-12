@@ -1,7 +1,8 @@
 /* ChatRoom styles */
 
 /* Mobile app-like fullscreen behavior */
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   height: 100%;
@@ -19,12 +20,14 @@ html, body {
   width: 100vw;
   overflow: hidden;
   /* Support for safe areas on notched devices */
-  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0)
+    env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
 }
 
 /* Mobile-specific overrides */
 @media (max-width: 768px) {
-  html, body {
+  html,
+  body {
     height: 100vh;
     height: 100dvh; /* Dynamic viewport height */
     overflow: hidden;
@@ -47,7 +50,9 @@ html, body {
   }
 
   /* Prevent zoom on input focus */
-  input, textarea, select {
+  input,
+  textarea,
+  select {
     font-size: 16px !important; /* Prevents zoom on iOS */
   }
 
@@ -104,7 +109,7 @@ html, body {
     width: 100vw !important;
     margin-left: 0 !important;
   }
-  
+
   .chat-room .chat-container-inner {
     max-width: 100vw !important;
   }
@@ -188,11 +193,11 @@ html, body {
   }
 
   /* When input is at top (keyboard open), add top border */
-  .chat-room .chat-paper[style*="column-reverse"] .input-area {
+  .chat-room .chat-paper[style*='column-reverse'] .input-area {
     border-top: none;
     border-bottom: 1px solid var(--mui-palette-divider);
   }
-  
+
   /* Adjust message area to account for mobile layout */
   .chat-room .messages-area {
     padding-bottom: 0;
@@ -202,7 +207,7 @@ html, body {
   }
 
   /* When keyboard is open and input is at top, messages take remaining space */
-  .chat-room .chat-paper[style*="column-reverse"] .messages-area {
+  .chat-room .chat-paper[style*='column-reverse'] .messages-area {
     flex: 1;
     overflow-y: auto;
   }
@@ -247,11 +252,11 @@ html, body {
   }
 
   /* Sidebar adjustments when input is repositioned */
-  .chat-room .chat-paper[style*="column-reverse"] .chat-sidebar {
+  .chat-room .chat-paper[style*='column-reverse'] .chat-sidebar {
     order: 0; /* Keep sidebar in normal position */
   }
 
-  .chat-room .chat-paper[style*="column-reverse"] .main-content {
+  .chat-room .chat-paper[style*='column-reverse'] .main-content {
     order: 0; /* Keep main content in normal position */
   }
 }
@@ -286,14 +291,19 @@ html, body {
   .chat-room .resize-handle {
     height: 12px; /* Taller touch target on mobile */
     top: -6px;
-    background: rgba(25, 118, 210, 0.05); /* Subtle background to show it's touchable */
+    background: rgba(
+      25,
+      118,
+      210,
+      0.05
+    ); /* Subtle background to show it's touchable */
   }
-  
+
   .chat-room .resize-handle:active {
     background: rgba(25, 118, 210, 0.15);
     border-top: 3px solid #1976d2;
   }
-  
+
   /* Add visual hint for touch devices */
   .chat-room .resize-handle::after {
     content: '';
@@ -375,17 +385,26 @@ html, body {
   width: 8px;
 }
 
-.chat-room .message-input .MuiOutlinedInput-root textarea::-webkit-scrollbar-track {
+.chat-room
+  .message-input
+  .MuiOutlinedInput-root
+  textarea::-webkit-scrollbar-track {
   background: #f3f4f6;
   border-radius: 4px;
 }
 
-.chat-room .message-input .MuiOutlinedInput-root textarea::-webkit-scrollbar-thumb {
+.chat-room
+  .message-input
+  .MuiOutlinedInput-root
+  textarea::-webkit-scrollbar-thumb {
   background: #9ca3af;
   border-radius: 4px;
 }
 
-.chat-room .message-input .MuiOutlinedInput-root textarea::-webkit-scrollbar-thumb:hover {
+.chat-room
+  .message-input
+  .MuiOutlinedInput-root
+  textarea::-webkit-scrollbar-thumb:hover {
   background: #6b7280;
 }
 

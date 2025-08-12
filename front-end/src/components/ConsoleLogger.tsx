@@ -38,22 +38,24 @@ const ConsoleLogger = () => {
     table: typeof console.table;
     trace: typeof console.trace;
     assert: typeof console.assert;
-  }>({} as {
-    log: typeof console.log;
-    error: typeof console.error;
-    warn: typeof console.warn;
-    info: typeof console.info;
-    debug: typeof console.debug;
-    table: typeof console.table;
-    trace: typeof console.trace;
-    assert: typeof console.assert;
-  });
+  }>(
+    {} as {
+      log: typeof console.log;
+      error: typeof console.error;
+      warn: typeof console.warn;
+      info: typeof console.info;
+      debug: typeof console.debug;
+      table: typeof console.table;
+      trace: typeof console.trace;
+      assert: typeof console.assert;
+    }
+  );
 
   // Storage keys for persistence
   const STORAGE_KEYS = {
     LOGS: 'consoleLogs',
     IS_OPEN: 'consoleLoggerOpen',
-    LOG_COUNT: 'consoleLogCount'
+    LOG_COUNT: 'consoleLogCount',
   };
 
   // Load persisted logs and state on component mount
@@ -101,16 +103,24 @@ const ConsoleLogger = () => {
   // Detect mobile devices
   useEffect(() => {
     const checkMobile = () => {
-      const userAgent = navigator.userAgent || navigator.vendor || (window as unknown as { opera?: string }).opera || '';
-      const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
-      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const userAgent =
+        navigator.userAgent ||
+        navigator.vendor ||
+        (window as unknown as { opera?: string }).opera ||
+        '';
+      const isMobileDevice =
+        /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(
+          userAgent.toLowerCase()
+        );
+      const isTouchDevice =
+        'ontouchstart' in window || navigator.maxTouchPoints > 0;
       const isSmallScreen = window.innerWidth <= 768;
-      
+
       return isMobileDevice || (isTouchDevice && isSmallScreen);
     };
-    
+
     setIsMobile(checkMobile());
-    
+
     // Show a welcome message for mobile users
     if (checkMobile()) {
       setTimeout(() => {
@@ -138,14 +148,17 @@ const ConsoleLogger = () => {
       return (...args: unknown[]) => {
         // Call original method
         originalMethod.apply(console, args);
-        
+
         // Special handling for different console methods
         let processedArgs = args;
         if (type === 'table' && args.length > 0) {
           // Convert table data to readable format
           const tableData = args[0];
           if (Array.isArray(tableData)) {
-            processedArgs = [`Table (${tableData.length} items):`, JSON.stringify(tableData, null, 2)];
+            processedArgs = [
+              `Table (${tableData.length} items):`,
+              JSON.stringify(tableData, null, 2),
+            ];
           } else if (typeof tableData === 'object') {
             processedArgs = ['Table:', JSON.stringify(tableData, null, 2)];
           }
@@ -160,14 +173,14 @@ const ConsoleLogger = () => {
             return; // Don't log successful assertions
           }
         }
-        
+
         // Create log entry for our display
         const timestamp = new Date();
         const logEntry = {
           id: Date.now() + Math.random(),
           type,
           timestamp,
-          args: processedArgs.map(arg => {
+          args: processedArgs.map((arg) => {
             if (typeof arg === 'object' && arg !== null) {
               try {
                 return JSON.stringify(arg, null, 2);
@@ -179,26 +192,42 @@ const ConsoleLogger = () => {
           }),
         };
 
-        setLogs(prevLogs => {
+        setLogs((prevLogs) => {
           const newLogs = [...prevLogs, logEntry];
           // Keep only the last 200 logs to prevent memory/storage issues
-          const trimmedLogs = newLogs.length > 200 ? newLogs.slice(-200) : newLogs;
+          const trimmedLogs =
+            newLogs.length > 200 ? newLogs.slice(-200) : newLogs;
           return trimmedLogs;
         });
 
-        setLogCount(prevCount => prevCount + 1);
+        setLogCount((prevCount) => prevCount + 1);
       };
     };
 
     // Override console methods
     console.log = createLogInterceptor('log', originalConsole.current.log);
-    console.error = createLogInterceptor('error', originalConsole.current.error);
+    console.error = createLogInterceptor(
+      'error',
+      originalConsole.current.error
+    );
     console.warn = createLogInterceptor('warn', originalConsole.current.warn);
     console.info = createLogInterceptor('info', originalConsole.current.info);
-    console.debug = createLogInterceptor('debug', originalConsole.current.debug);
-    console.table = createLogInterceptor('table', originalConsole.current.table);
-    console.trace = createLogInterceptor('trace', originalConsole.current.trace);
-    console.assert = createLogInterceptor('assert', originalConsole.current.assert);
+    console.debug = createLogInterceptor(
+      'debug',
+      originalConsole.current.debug
+    );
+    console.table = createLogInterceptor(
+      'table',
+      originalConsole.current.table
+    );
+    console.trace = createLogInterceptor(
+      'trace',
+      originalConsole.current.trace
+    );
+    console.assert = createLogInterceptor(
+      'assert',
+      originalConsole.current.assert
+    );
 
     // Cleanup function to restore original console methods
     return () => {
@@ -331,7 +360,7 @@ const ConsoleLogger = () => {
             />
           )}
         </Box>
-        
+
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {logs.length > 0 && (
             <Button
@@ -402,9 +431,8 @@ const ConsoleLogger = () => {
                   fontSize: '8px',
                   color: 'rgba(255, 255, 255, 0.8)',
                 }}
-              >
-              </Box>
-              
+              ></Box>
+
               {logs.map((log) => (
                 <Box
                   key={log.id}
@@ -447,7 +475,9 @@ const ConsoleLogger = () => {
                       variant="caption"
                       sx={{ color: 'rgba(255, 255, 255, 0.5)' }}
                     >
-                      {log.timestamp instanceof Date ? log.timestamp.toLocaleTimeString() : log.timestamp}
+                      {log.timestamp instanceof Date
+                        ? log.timestamp.toLocaleTimeString()
+                        : log.timestamp}
                     </Typography>
                   </Box>
                   <Box>

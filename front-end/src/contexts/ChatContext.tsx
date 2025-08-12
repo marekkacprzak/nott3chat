@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { chatApi, Chat } from '../services/chatApi';
 
@@ -33,7 +32,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [hasLoaded, setHasLoaded] = useState<boolean>(false);
-  
+
   const loadChats = useCallback(async (): Promise<void> => {
     setLoading(true);
     setError('');
@@ -50,31 +49,36 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   }, []);
 
   const addNewChat = useCallback((newChat: Chat): void => {
-    setChats((prev) => prev.some(c => c.id === newChat.id) ? prev : [newChat, ...prev]);
-  }, []);
-
-  const updateChatTitle = useCallback((chatId: string, newTitle: string): void => {
-    setChats((prev) => 
-      prev.map(chat => 
-        chat.id === chatId 
-          ? { ...chat, title: newTitle }
-          : chat
-      )
+    setChats((prev) =>
+      prev.some((c) => c.id === newChat.id) ? prev : [newChat, ...prev]
     );
   }, []);
 
-  const deleteChat = useCallback(async (chatId: string, callApi: boolean = true): Promise<boolean> => {
-    try {
-      if (callApi)
-        await chatApi.deleteChat(chatId);
-      setChats((prev) => prev.filter(chat => chat.id !== chatId));
-      
-      return true;
-    } catch (err) {
-      console.error('Error deleting chat:', err);
-      return false;
-    }
-  }, []);
+  const updateChatTitle = useCallback(
+    (chatId: string, newTitle: string): void => {
+      setChats((prev) =>
+        prev.map((chat) =>
+          chat.id === chatId ? { ...chat, title: newTitle } : chat
+        )
+      );
+    },
+    []
+  );
+
+  const deleteChat = useCallback(
+    async (chatId: string, callApi: boolean = true): Promise<boolean> => {
+      try {
+        if (callApi) await chatApi.deleteChat(chatId);
+        setChats((prev) => prev.filter((chat) => chat.id !== chatId));
+
+        return true;
+      } catch (err) {
+        console.error('Error deleting chat:', err);
+        return false;
+      }
+    },
+    []
+  );
 
   const value: ChatContextType = {
     chats,
@@ -89,5 +93,3 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 };
-
-

@@ -116,7 +116,7 @@ const themeVariants: Record<string, ThemeConfig> = {
 
 const createCustomTheme = (variant: string): Theme => {
   const config = themeVariants[variant];
-  
+
   return createTheme({
     palette: {
       mode: config.mode,
@@ -131,29 +131,32 @@ const createCustomTheme = (variant: string): Theme => {
         default: config.backgroundColor,
         paper: config.paperColor,
       },
-      grey: config.mode === 'dark' ? {
-        50: '#fafafa',
-        100: '#f5f5f5',
-        200: '#eeeeee',
-        300: '#e0e0e0',
-        400: '#bdbdbd',
-        500: '#9e9e9e',
-        600: '#757575',
-        700: '#616161',
-        800: '#424242',
-        900: '#212121',
-      } : {
-        50: '#f8fafc',
-        100: '#f1f5f9',
-        200: '#e2e8f0',
-        300: '#cbd5e1',
-        400: '#94a3b8',
-        500: '#64748b',
-        600: '#475569',
-        700: '#334155',
-        800: '#1e293b',
-        900: '#0f172a',
-      },
+      grey:
+        config.mode === 'dark'
+          ? {
+              50: '#fafafa',
+              100: '#f5f5f5',
+              200: '#eeeeee',
+              300: '#e0e0e0',
+              400: '#bdbdbd',
+              500: '#9e9e9e',
+              600: '#757575',
+              700: '#616161',
+              800: '#424242',
+              900: '#212121',
+            }
+          : {
+              50: '#f8fafc',
+              100: '#f1f5f9',
+              200: '#e2e8f0',
+              300: '#cbd5e1',
+              400: '#94a3b8',
+              500: '#64748b',
+              600: '#475569',
+              700: '#334155',
+              800: '#1e293b',
+              900: '#0f172a',
+            },
     },
     typography: {
       fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
@@ -221,69 +224,86 @@ const createCustomTheme = (variant: string): Theme => {
       },
       MuiCssBaseline: {
         styleOverrides: {
-          body: config.mode === 'dark' ? {
-            scrollbarColor: '#6b7280 #374151',
-            '&::-webkit-scrollbar, & *::-webkit-scrollbar': {
-              backgroundColor: config.paperColor,
-              width: 8,
-            },
-            '&::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb': {
-              borderRadius: 8,
-              backgroundColor: '#6b7280',
-              minHeight: 24,
-              border: '1px solid transparent',
-            },
-            '&::-webkit-scrollbar-thumb:focus, & *::-webkit-scrollbar-thumb:focus': {
-              backgroundColor: '#9ca3af',
-            },
-            '&::-webkit-scrollbar-thumb:active, & *::-webkit-scrollbar-thumb:active': {
-              backgroundColor: '#9ca3af',
-            },
-            '&::-webkit-scrollbar-thumb:hover, & *::-webkit-scrollbar-thumb:hover': {
-              backgroundColor: '#9ca3af',
-            },
-            '&::-webkit-scrollbar-corner, & *::-webkit-scrollbar-corner': {
-              backgroundColor: config.paperColor,
-            },
-          } : {
-            scrollbarColor: '#cbd5e1 #e2e8f0',
-            '&::-webkit-scrollbar, & *::-webkit-scrollbar': {
-              backgroundColor: '#f1f5f9',
-              width: 8,
-            },
-            '&::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb': {
-              borderRadius: 8,
-              backgroundColor: '#cbd5e1',
-              minHeight: 24,
-              border: '1px solid transparent',
-            },
-            '&::-webkit-scrollbar-thumb:focus, & *::-webkit-scrollbar-thumb:focus': {
-              backgroundColor: '#94a3b8',
-            },
-            '&::-webkit-scrollbar-thumb:active, & *::-webkit-scrollbar-thumb:active': {
-              backgroundColor: '#94a3b8',
-            },
-            '&::-webkit-scrollbar-thumb:hover, & *::-webkit-scrollbar-thumb:hover': {
-              backgroundColor: '#94a3b8',
-            },
-            '&::-webkit-scrollbar-corner, & *::-webkit-scrollbar-corner': {
-              backgroundColor: '#f1f5f9',
-            },
-          },
+          body:
+            config.mode === 'dark'
+              ? {
+                  scrollbarColor: '#6b7280 #374151',
+                  '&::-webkit-scrollbar, & *::-webkit-scrollbar': {
+                    backgroundColor: config.paperColor,
+                    width: 8,
+                  },
+                  '&::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb': {
+                    borderRadius: 8,
+                    backgroundColor: '#6b7280',
+                    minHeight: 24,
+                    border: '1px solid transparent',
+                  },
+                  '&::-webkit-scrollbar-thumb:focus, & *::-webkit-scrollbar-thumb:focus':
+                    {
+                      backgroundColor: '#9ca3af',
+                    },
+                  '&::-webkit-scrollbar-thumb:active, & *::-webkit-scrollbar-thumb:active':
+                    {
+                      backgroundColor: '#9ca3af',
+                    },
+                  '&::-webkit-scrollbar-thumb:hover, & *::-webkit-scrollbar-thumb:hover':
+                    {
+                      backgroundColor: '#9ca3af',
+                    },
+                  '&::-webkit-scrollbar-corner, & *::-webkit-scrollbar-corner':
+                    {
+                      backgroundColor: config.paperColor,
+                    },
+                }
+              : {
+                  scrollbarColor: '#cbd5e1 #e2e8f0',
+                  '&::-webkit-scrollbar, & *::-webkit-scrollbar': {
+                    backgroundColor: '#f1f5f9',
+                    width: 8,
+                  },
+                  '&::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb': {
+                    borderRadius: 8,
+                    backgroundColor: '#cbd5e1',
+                    minHeight: 24,
+                    border: '1px solid transparent',
+                  },
+                  '&::-webkit-scrollbar-thumb:focus, & *::-webkit-scrollbar-thumb:focus':
+                    {
+                      backgroundColor: '#94a3b8',
+                    },
+                  '&::-webkit-scrollbar-thumb:active, & *::-webkit-scrollbar-thumb:active':
+                    {
+                      backgroundColor: '#94a3b8',
+                    },
+                  '&::-webkit-scrollbar-thumb:hover, & *::-webkit-scrollbar-thumb:hover':
+                    {
+                      backgroundColor: '#94a3b8',
+                    },
+                  '&::-webkit-scrollbar-corner, & *::-webkit-scrollbar-corner':
+                    {
+                      backgroundColor: '#f1f5f9',
+                    },
+                },
         },
       },
     },
   });
 };
 
-export const ThemeModeProvider: React.FC<ThemeModeProviderProps> = ({ children }) => {
+export const ThemeModeProvider: React.FC<ThemeModeProviderProps> = ({
+  children,
+}) => {
   const [currentTheme, setCurrentTheme] = useState<string>(() => {
     // Get theme from localStorage or default to 'Default Light'
     const savedTheme = localStorage.getItem('themeVariant');
-    return savedTheme && savedTheme in themeVariants ? savedTheme : 'Default Light';
+    return savedTheme && savedTheme in themeVariants
+      ? savedTheme
+      : 'Default Light';
   });
 
-  const [theme, setTheme] = useState<Theme>(() => createCustomTheme(currentTheme));
+  const [theme, setTheme] = useState<Theme>(() =>
+    createCustomTheme(currentTheme)
+  );
 
   useEffect(() => {
     // Save theme preference to localStorage
@@ -315,8 +335,6 @@ export const ThemeModeProvider: React.FC<ThemeModeProviderProps> = ({ children }
   };
 
   return (
-    <ThemeContext.Provider value={value}>
-      {children}
-    </ThemeContext.Provider>
+    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
   );
 };

@@ -68,14 +68,19 @@
 @media (max-width: 768px) {
   .chat-sidebar .sidebar-resize-handle {
     width: 8px; /* Wider touch target */
-    background-color: rgba(25, 118, 210, 0.1); /* Slight background to show it's touchable */
+    background-color: rgba(
+      25,
+      118,
+      210,
+      0.1
+    ); /* Slight background to show it's touchable */
   }
-  
+
   .chat-sidebar .sidebar-resize-handle:active {
     background-color: #1976d2 !important;
     opacity: 0.6 !important;
   }
-  
+
   /* Add subtle visual hint for touch devices */
   .chat-sidebar .sidebar-resize-handle::after {
     content: '';
@@ -303,7 +308,9 @@
   display: flex;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.3s ease, visibility 0.3s ease;
+  transition:
+    opacity 0.3s ease,
+    visibility 0.3s ease;
   float: right;
   margin-left: 4px;
   margin-top: 2px;
@@ -311,7 +318,7 @@
 }
 
 .chat-sidebar .chat-content::after {
-  content: "";
+  content: '';
   display: table;
   clear: both;
 }
@@ -363,7 +370,8 @@
 }
 
 /* Minimize padding for Material-UI ListItemButton components */
-.chat-sidebar .MuiButtonBase-root.MuiListItemButton-root.MuiListItemButton-gutters,
+.chat-sidebar
+  .MuiButtonBase-root.MuiListItemButton-root.MuiListItemButton-gutters,
 .chat-sidebar .MuiListItemButton-root.MuiListItemButton-gutters,
 .chat-sidebar .chat-button.MuiButtonBase-root,
 .chat-sidebar .MuiListItemButton-root {

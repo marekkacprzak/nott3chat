@@ -17,19 +17,22 @@ export const useKeyboardPosition = () => {
     isKeyboardOpen: false,
     keyboardHeight: 0,
     viewportHeight: window.innerHeight,
-    isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
-    inputPosition: 'bottom'
+    isMobile:
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent
+      ),
+    inputPosition: 'bottom',
   });
 
   const timeoutRef = useRef<number | null>(null);
   const initialHeightRef = useRef(window.innerHeight);
 
   const moveInputToTop = useCallback(() => {
-    setState(prev => ({ ...prev, inputPosition: 'top' }));
+    setState((prev) => ({ ...prev, inputPosition: 'top' }));
   }, []);
 
   const moveInputToBottom = useCallback(() => {
-    setState(prev => ({ ...prev, inputPosition: 'bottom' }));
+    setState((prev) => ({ ...prev, inputPosition: 'bottom' }));
   }, []);
 
   useEffect(() => {
@@ -39,24 +42,24 @@ export const useKeyboardPosition = () => {
       const currentHeight = window.visualViewport?.height || window.innerHeight;
       const heightDifference = initialHeightRef.current - currentHeight;
       const isKeyboardOpen = heightDifference > 150; // Threshold for keyboard detection
-      
+
       // Clear any existing timeout
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
 
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         isKeyboardOpen,
         keyboardHeight: isKeyboardOpen ? heightDifference : 0,
         viewportHeight: currentHeight,
-        inputPosition: isKeyboardOpen ? 'top' : prev.inputPosition
+        inputPosition: isKeyboardOpen ? 'top' : prev.inputPosition,
       }));
 
       // If keyboard is closing, wait a bit before moving input back to bottom
       if (!isKeyboardOpen && state.inputPosition === 'top') {
         timeoutRef.current = setTimeout(() => {
-          setState(prev => ({ ...prev, inputPosition: 'bottom' }));
+          setState((prev) => ({ ...prev, inputPosition: 'bottom' }));
         }, 300); // Wait for keyboard animation to complete
       }
     };
@@ -65,7 +68,10 @@ export const useKeyboardPosition = () => {
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', handleViewportChange);
       return () => {
-        window.visualViewport?.removeEventListener('resize', handleViewportChange);
+        window.visualViewport?.removeEventListener(
+          'resize',
+          handleViewportChange
+        );
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current);
         }
@@ -102,6 +108,6 @@ export const useKeyboardPosition = () => {
     moveInputToTop,
     moveInputToBottom,
     handleInputFocus,
-    handleInputBlur
+    handleInputBlur,
   };
 };

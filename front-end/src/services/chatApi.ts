@@ -28,10 +28,13 @@ export const chatApi = {
   },
 
   // Fork a chat from a specific message
-  forkChat: async (conversationId: string, messageId: string): Promise<string> => {
+  forkChat: async (
+    conversationId: string,
+    messageId: string
+  ): Promise<string> => {
     const response = await api.post('/chats/fork', {
       conversationId,
-      messageId
+      messageId,
     });
     return response.data.id; // Extract ID from NotT3ConversationDTO
   },

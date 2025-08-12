@@ -1,6 +1,12 @@
-
-import React, { createContext, useContext, useState, useEffect,
-  useCallback, useRef, useMemo } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from 'react';
 import * as signalR from '@microsoft/signalr';
 import { isIos, getSignalRToken } from '@/services/tokenStore';
 import { useAuth } from './AuthContext';
@@ -39,7 +45,10 @@ export const useSignalR = (): SignalRContextType => {
   return context;
 };
 
-const serverMessageToLocal = (serverMsg: ServerMessage, isComplete: boolean = true): LocalMessage => ({
+const serverMessageToLocal = (
+  serverMsg: ServerMessage,
+  isComplete: boolean = true
+): LocalMessage => ({
   id: serverMsg.id,
   index: serverMsg.index,
   type: serverMsg.role,
@@ -50,106 +59,145 @@ const serverMessageToLocal = (serverMsg: ServerMessage, isComplete: boolean = tr
   finishError: serverMsg.finishError || null,
 });
 
-const replaceOrAddMessage = (prevList: LocalMessage[], newMessage: LocalMessage): LocalMessage[] => {
-  const existingIndex = prevList.findIndex(msg => msg.id === newMessage.id);
+const replaceOrAddMessage = (
+  prevList: LocalMessage[],
+  newMessage: LocalMessage
+): LocalMessage[] => {
+  const existingIndex = prevList.findIndex((msg) => msg.id === newMessage.id);
   if (existingIndex >= 0) {
     return [...prevList.slice(0, existingIndex), newMessage];
   }
   return [...prevList, newMessage];
 };
 
-export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) => {
-  const [connection, setConnection] = useState<signalR.HubConnection | null>(null);
+export const SignalRProvider: React.FC<SignalRProviderProps> = ({
+  children,
+}) => {
+  const [connection, setConnection] = useState<signalR.HubConnection | null>(
+    null
+  );
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [messages, setMessages] = useState<LocalMessage[]>([]);
-  const [currentAssistantMessage, setCurrentAssistantMessage] = useState<LocalMessage | null>(null);
+  const [currentAssistantMessage, setCurrentAssistantMessage] =
+    useState<LocalMessage | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const currentChatId = useRef<string | null>(null);
   const isInitializing = useRef(false);
   const connectionAttempts = useRef(0);
   const navigate = useNavigate();
-  
+
   const { isAuthenticated } = useAuth();
   const { addNewChat, updateChatTitle, deleteChat, loadChats } = useChats();
   const reconnectTimeoutRef = useRef<number | null>(null);
-  
+
   // Define event handlers as stable references outside of setupEventHandlers
-  const handleConversationHistory = useCallback((convoId: string, messages: ServerMessage[]) => {
-    if (convoId === currentChatId.current) {
-      setMessages(messages.map((msg: ServerMessage) => serverMessageToLocal(msg)));
-    }
-  }, []);
+  const handleConversationHistory = useCallback(
+    (convoId: string, messages: ServerMessage[]) => {
+      if (convoId === currentChatId.current) {
+        setMessages(
+          messages.map((msg: ServerMessage) => serverMessageToLocal(msg))
+        );
+      }
+    },
+    []
+  );
 
-  const handleUserMessage = useCallback((convoId: string, message: ServerMessage) => {
-    if (convoId === currentChatId.current) {
-      setMessages((prev) => replaceOrAddMessage(prev, serverMessageToLocal(message)));
-    }
-  }, []);
+  const handleUserMessage = useCallback(
+    (convoId: string, message: ServerMessage) => {
+      if (convoId === currentChatId.current) {
+        setMessages((prev) =>
+          replaceOrAddMessage(prev, serverMessageToLocal(message))
+        );
+      }
+    },
+    []
+  );
 
-  const handleBeginAssistantMessage = useCallback((convoId: string, message: ServerMessage) => {
-    if (convoId === currentChatId.current) {
-      const newMessage = serverMessageToLocal(message, false);
-      setCurrentAssistantMessage(newMessage);
-      setMessages((prev) => replaceOrAddMessage(prev, newMessage));
-    }
-  }, []);
+  const handleBeginAssistantMessage = useCallback(
+    (convoId: string, message: ServerMessage) => {
+      if (convoId === currentChatId.current) {
+        const newMessage = serverMessageToLocal(message, false);
+        setCurrentAssistantMessage(newMessage);
+        setMessages((prev) => replaceOrAddMessage(prev, newMessage));
+      }
+    },
+    []
+  );
 
-  const handleNewAssistantPart = useCallback((convoId: string, text: string) => {
-    if (convoId === currentChatId.current) {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.type === 'assistant' && !msg.isComplete
-            ? { ...msg, content: msg.content + text }
-            : msg
-        )
-      );
-      setCurrentAssistantMessage((prev) =>
-        prev ? { ...prev, content: prev.content + text } : prev
-      );
-    }
-  }, []);
+  const handleNewAssistantPart = useCallback(
+    (convoId: string, text: string) => {
+      if (convoId === currentChatId.current) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.type === 'assistant' && !msg.isComplete
+              ? { ...msg, content: msg.content + text }
+              : msg
+          )
+        );
+        setCurrentAssistantMessage((prev) =>
+          prev ? { ...prev, content: prev.content + text } : prev
+        );
+      }
+    },
+    []
+  );
 
-  const handleEndAssistantMessage = useCallback((convoId: string, finishError: string | null) => {
-    if (convoId === currentChatId.current) {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.type === 'assistant' && !msg.isComplete
-            ? { ...msg, isComplete: true, finishError: finishError || null }
-            : msg
-        )
-      );
-      setCurrentAssistantMessage(null);
-    }
-  }, []);
+  const handleEndAssistantMessage = useCallback(
+    (convoId: string, finishError: string | null) => {
+      if (convoId === currentChatId.current) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.type === 'assistant' && !msg.isComplete
+              ? { ...msg, isComplete: true, finishError: finishError || null }
+              : msg
+          )
+        );
+        setCurrentAssistantMessage(null);
+      }
+    },
+    []
+  );
 
-  const handleRegenerateMessage = useCallback((convoId: string, messageId: string) => {
-    if (convoId === currentChatId.current) {
-      setMessages((prev) => {
-        const messageIndex = prev.findIndex(msg => msg.id === messageId);
-        if (messageIndex >= 0) {
-          return prev.slice(0, messageIndex);
-        }
-        return prev;
-      });
-      setCurrentAssistantMessage(null);
-    }
-  }, []);
+  const handleRegenerateMessage = useCallback(
+    (convoId: string, messageId: string) => {
+      if (convoId === currentChatId.current) {
+        setMessages((prev) => {
+          const messageIndex = prev.findIndex((msg) => msg.id === messageId);
+          if (messageIndex >= 0) {
+            return prev.slice(0, messageIndex);
+          }
+          return prev;
+        });
+        setCurrentAssistantMessage(null);
+      }
+    },
+    []
+  );
 
-  const handleChatTitle = useCallback((titleChatId: string, title: string) => {
-    updateChatTitle(titleChatId, title);
-  }, [updateChatTitle]);
+  const handleChatTitle = useCallback(
+    (titleChatId: string, title: string) => {
+      updateChatTitle(titleChatId, title);
+    },
+    [updateChatTitle]
+  );
 
-  const handleNewConversation = useCallback((convo: Chat) => {
-    addNewChat(convo);
-  }, [addNewChat]);
+  const handleNewConversation = useCallback(
+    (convo: Chat) => {
+      addNewChat(convo);
+    },
+    [addNewChat]
+  );
 
-  const handleDeleteConversation = useCallback(async (convoId: string) => {
-    await deleteChat(convoId, false);
-  }, [deleteChat]);
+  const handleDeleteConversation = useCallback(
+    async (convoId: string) => {
+      await deleteChat(convoId, false);
+    },
+    [deleteChat]
+  );
 
   const handleClose = useCallback(() => {
-  console.debug('[SignalR] onclose - connection closed');
+    console.debug('[SignalR] onclose - connection closed');
     setIsConnected(false);
     setConnection(null);
   }, []);
@@ -160,7 +208,9 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
     // Reload chats when reconnecting to get any updates that happened while disconnected
     loadChats();
     if (currentChatId.current) {
-      connection?.invoke('ChooseChat', currentChatId.current).catch(() => navigate('/chat'));
+      connection
+        ?.invoke('ChooseChat', currentChatId.current)
+        .catch(() => navigate('/chat'));
     }
   }, [connection, navigate, loadChats]);
 
@@ -168,46 +218,49 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
     setIsConnected(false);
   }, []);
 
-  const setupEventHandlers = useCallback((conn: HubConnection) => {
-    // Clean up any existing handlers
-    conn.off('ConversationHistory');
-    conn.off('UserMessage');
-    conn.off('BeginAssistantMessage');
-    conn.off('NewAssistantPart');
-    conn.off('EndAssistantMessage');
-    conn.off('RegenerateMessage');
-    conn.off('ChatTitle');
-    conn.off('NewConversation');
-    conn.off('DeleteConversation');
+  const setupEventHandlers = useCallback(
+    (conn: HubConnection) => {
+      // Clean up any existing handlers
+      conn.off('ConversationHistory');
+      conn.off('UserMessage');
+      conn.off('BeginAssistantMessage');
+      conn.off('NewAssistantPart');
+      conn.off('EndAssistantMessage');
+      conn.off('RegenerateMessage');
+      conn.off('ChatTitle');
+      conn.off('NewConversation');
+      conn.off('DeleteConversation');
 
-    // Set up new handlers
-    conn.on('ConversationHistory', handleConversationHistory);
-    conn.on('UserMessage', handleUserMessage);
-    conn.on('BeginAssistantMessage', handleBeginAssistantMessage);
-    conn.on('NewAssistantPart', handleNewAssistantPart);
-    conn.on('EndAssistantMessage', handleEndAssistantMessage);
-    conn.on('RegenerateMessage', handleRegenerateMessage);
-    conn.on('ChatTitle', handleChatTitle);
-    conn.on('NewConversation', handleNewConversation);
-    conn.on('DeleteConversation', handleDeleteConversation);
+      // Set up new handlers
+      conn.on('ConversationHistory', handleConversationHistory);
+      conn.on('UserMessage', handleUserMessage);
+      conn.on('BeginAssistantMessage', handleBeginAssistantMessage);
+      conn.on('NewAssistantPart', handleNewAssistantPart);
+      conn.on('EndAssistantMessage', handleEndAssistantMessage);
+      conn.on('RegenerateMessage', handleRegenerateMessage);
+      conn.on('ChatTitle', handleChatTitle);
+      conn.on('NewConversation', handleNewConversation);
+      conn.on('DeleteConversation', handleDeleteConversation);
 
-    conn.onclose(handleClose);
-    conn.onreconnected(handleReconnected);
-    conn.onreconnecting(handleReconnecting);
-  }, [
-    handleConversationHistory,
-    handleUserMessage,
-    handleBeginAssistantMessage,
-    handleNewAssistantPart,
-    handleEndAssistantMessage,
-    handleRegenerateMessage,
-    handleChatTitle,
-    handleNewConversation,
-    handleDeleteConversation,
-    handleClose,
-    handleReconnected,
-    handleReconnecting,
-  ]);
+      conn.onclose(handleClose);
+      conn.onreconnected(handleReconnected);
+      conn.onreconnecting(handleReconnecting);
+    },
+    [
+      handleConversationHistory,
+      handleUserMessage,
+      handleBeginAssistantMessage,
+      handleNewAssistantPart,
+      handleEndAssistantMessage,
+      handleRegenerateMessage,
+      handleChatTitle,
+      handleNewConversation,
+      handleDeleteConversation,
+      handleClose,
+      handleReconnected,
+      handleReconnecting,
+    ]
+  );
 
   const closeConnection = useCallback(() => {
     if (connection) {
@@ -221,37 +274,40 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
     setConnectionError(null);
     isInitializing.current = false;
     connectionAttempts.current = 0; // Reset connection attempts
-    
+
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
   }, [connection]);
 
-  const chooseChat = useCallback(async (chatId: string | null) => {
-    if (!connection || !isConnected) {
-      currentChatId.current = chatId;
-      setMessages([]);
-      setCurrentAssistantMessage(null);
-      return;
-    }
-
-    try {
-      currentChatId.current = chatId;
-      setMessages([]);
-      setCurrentAssistantMessage(null);
-      
-      if (chatId) {
-        try {
-          await connection.invoke('ChooseChat', chatId);
-        } catch {
-          navigate('/chat');
-        }
+  const chooseChat = useCallback(
+    async (chatId: string | null) => {
+      if (!connection || !isConnected) {
+        currentChatId.current = chatId;
+        setMessages([]);
+        setCurrentAssistantMessage(null);
+        return;
       }
-    } catch (error) {
-      console.error('Error choosing chat:', error);
-    }
-  }, [connection, isConnected, navigate]);
+
+      try {
+        currentChatId.current = chatId;
+        setMessages([]);
+        setCurrentAssistantMessage(null);
+
+        if (chatId) {
+          try {
+            await connection.invoke('ChooseChat', chatId);
+          } catch {
+            navigate('/chat');
+          }
+        }
+      } catch (error) {
+        console.error('Error choosing chat:', error);
+      }
+    },
+    [connection, isConnected, navigate]
+  );
 
   const sendMessage = useCallback(
     async (model: string, message: string) => {
@@ -286,15 +342,15 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
     setIsConnecting(true);
     setConnectionError(null);
 
-  const url = `${import.meta.env.VITE_API_URL}/chat`;
+    const url = `${import.meta.env.VITE_API_URL}/chat`;
 
-  const attemptConnection = () => {
+    const attemptConnection = () => {
       //console.log(`SignalR connection attempt ${connectionAttempts.current + 1}`);
-      
+
       // Auth options differ for iOS (header token) vs others (cookies)
       const iOS = isIos();
-  // Fetch fresh token at each attempt
-  const iosSignalRToken = iOS ? getSignalRToken() : undefined;
+      // Fetch fresh token at each attempt
+      const iosSignalRToken = iOS ? getSignalRToken() : undefined;
       console.debug('[SignalR] connecting', {
         mode: iOS ? 'header-token' : 'cookies',
         hasToken: Boolean(iosSignalRToken),
@@ -322,7 +378,7 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
             skipNegotiation: false,
           };
 
-  const newConnection = new signalR.HubConnectionBuilder()
+      const newConnection = new signalR.HubConnectionBuilder()
         .withUrl(url, connectionOptions)
         .withAutomaticReconnect({
           nextRetryDelayInMilliseconds: (retryContext: RetryContext) => {
@@ -334,14 +390,14 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
           },
         })
         .configureLogging(
-          import.meta.env.PROD 
-            ? signalR.LogLevel.Warning  // Production: Only warnings and errors
-            : signalR.LogLevel.Information  // Development: Full logging
+          import.meta.env.PROD
+            ? signalR.LogLevel.Warning // Production: Only warnings and errors
+            : signalR.LogLevel.Information // Development: Full logging
         )
-  .build();
+        .build();
 
       setupEventHandlers(newConnection);
-      
+
       newConnection
         .start()
         .then(() => {
@@ -355,13 +411,18 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
           connectionAttempts.current = 0; // Reset attempts on success
         })
         .catch((error) => {
-          console.error(`SignalR connection error (attempt ${connectionAttempts.current + 1}):`, error);
-          console.error('[SignalR] connection failed', { mode: iOS ? 'header-token' : 'cookies' });
+          console.error(
+            `SignalR connection error (attempt ${connectionAttempts.current + 1}):`,
+            error
+          );
+          console.error('[SignalR] connection failed', {
+            mode: iOS ? 'header-token' : 'cookies',
+          });
           connectionAttempts.current++;
           setConnectionError(error.message);
           setIsConnecting(false);
           isInitializing.current = false;
-          
+
           if (error.statusCode === 401) {
             console.error('SignalR authentication failed - auth mode issue');
           }
@@ -383,7 +444,7 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
 
   const reconnect = useCallback(async (): Promise<void> => {
     if (isConnecting) return; // Already connecting, don't start another
-  
+
     // Force close any existing connection
     closeConnection();
     // Reset connection attempts for manual reconnect
@@ -392,7 +453,7 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
     loadChats();
     await initializeConnection();
   }, [isConnecting, closeConnection, initializeConnection, loadChats]);
-  
+
   // Initialize connection when authenticated
   useEffect(() => {
     if (isAuthenticated && !connection) {
@@ -412,40 +473,39 @@ export const SignalRProvider: React.FC<SignalRProviderProps> = ({ children }) =>
     };
   }, [connection]);
 
-  
-  const value = useMemo((): SignalRContextType => ({
-    // Connection state
-    connection,
-    isConnected,
-    isConnecting,
-    connectionError,
-    
-    // Chat state
-    messages,
-    currentAssistantMessage,
-    
-    // Actions
-    chooseChat,
-    sendMessage,
-    regenerateMessage,
-    reconnect,
-  }), [
-    connection,
-    isConnected,
-    isConnecting,
-    connectionError,
-    messages,
-    currentAssistantMessage,
-    chooseChat,
-    sendMessage,
-    regenerateMessage,
-    reconnect,
-  ]);
+  const value = useMemo(
+    (): SignalRContextType => ({
+      // Connection state
+      connection,
+      isConnected,
+      isConnecting,
+      connectionError,
+
+      // Chat state
+      messages,
+      currentAssistantMessage,
+
+      // Actions
+      chooseChat,
+      sendMessage,
+      regenerateMessage,
+      reconnect,
+    }),
+    [
+      connection,
+      isConnected,
+      isConnecting,
+      connectionError,
+      messages,
+      currentAssistantMessage,
+      chooseChat,
+      sendMessage,
+      regenerateMessage,
+      reconnect,
+    ]
+  );
 
   return (
-    <SignalRContext.Provider value={value}>
-      {children}
-    </SignalRContext.Provider>
+    <SignalRContext.Provider value={value}>{children}</SignalRContext.Provider>
   );
 };
-

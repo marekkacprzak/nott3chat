@@ -1,16 +1,44 @@
 import React, { useEffect, useCallback } from 'react';
 import { SelectChangeEvent } from '@mui/material/Select';
 import lcn from 'light-classnames';
-import { FormControl, Select, MenuItem, Box, Typography, 
-  Chip, CircularProgress } from '@mui/material';
 import {
-  SmartToy, Psychology, Cloud, Code, Extension, Search, 
-  Speed, Waves, AutoAwesome, FlashOn, TravelExplore } from '@mui/icons-material';
+  FormControl,
+  Select,
+  MenuItem,
+  Box,
+  Typography,
+  Chip,
+  CircularProgress,
+} from '@mui/material';
+import {
+  SmartToy,
+  Psychology,
+  Cloud,
+  Code,
+  Extension,
+  Search,
+  Speed,
+  Waves,
+  AutoAwesome,
+  FlashOn,
+  TravelExplore,
+} from '@mui/icons-material';
 import { useModels } from '../contexts/ModelsContext';
 import './ModelSelector.css';
 import { Model } from '@/services/modelApi';
 
-type ProviderName = 'OpenAi' | 'Anthropic' | 'AzureOpenAi' | 'Cohere' | 'Custom' | 'Google' | 'Groq' | 'DeepSeek' | 'Mistral' | 'XAi' | 'Perplexity';
+type ProviderName =
+  | 'OpenAi'
+  | 'Anthropic'
+  | 'AzureOpenAi'
+  | 'Cohere'
+  | 'Custom'
+  | 'Google'
+  | 'Groq'
+  | 'DeepSeek'
+  | 'Mistral'
+  | 'XAi'
+  | 'Perplexity';
 
 const providerIcons: Record<ProviderName, React.ReactElement> = {
   OpenAi: <SmartToy />,
@@ -46,7 +74,11 @@ interface ModelSelectorProps {
   disabled?: boolean;
 }
 
-const ModelSelector: React.FC<ModelSelectorProps> = ({ selectedModel, onModelChange, disabled }) => {
+const ModelSelector: React.FC<ModelSelectorProps> = ({
+  selectedModel,
+  onModelChange,
+  disabled,
+}) => {
   const { models, loading, error } = useModels();
 
   useEffect(() => {
@@ -75,7 +107,12 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ selectedModel, onModelCha
 
   if (error) {
     return (
-      <Chip label="Error loading models" size="small" color="error" variant="outlined" />
+      <Chip
+        label="Error loading models"
+        size="small"
+        color="error"
+        variant="outlined"
+      />
     );
   }
 
@@ -102,7 +139,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ selectedModel, onModelCha
             const providerName = (model.provider as ProviderName) || 'Custom';
             const className = providerClasses[providerName] || 'custom';
             const icon = providerIcons[providerName] || <Extension />;
-            
+
             return (
               <Box className="render-value">
                 <Box
@@ -123,7 +160,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ selectedModel, onModelCha
             const providerName = (model.provider as ProviderName) || 'Custom';
             const className = providerClasses[providerName] || 'custom';
             const icon = providerIcons[providerName] || <Extension />;
-            
+
             return (
               <MenuItem key={model.name} value={model.name}>
                 <Box className="menu-item">
@@ -138,7 +175,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ selectedModel, onModelCha
                     <Typography variant="body2" className="menu-item-title">
                       {model.name}
                     </Typography>
-                    <Typography variant="caption" className="menu-item-provider">
+                    <Typography
+                      variant="caption"
+                      className="menu-item-provider"
+                    >
                       {model.provider}
                     </Typography>
                   </Box>
@@ -151,7 +191,5 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ selectedModel, onModelCha
     </div>
   );
 };
-
-
 
 export default ModelSelector;

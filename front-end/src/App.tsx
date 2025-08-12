@@ -27,7 +27,7 @@ const AppRoutes: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [showLogger, setShowLogger] = React.useState<boolean>(false);
-  
+
   // Initialize navigation service with React Router's navigate function
   React.useEffect(() => {
     setNavigate(navigate);
@@ -36,7 +36,7 @@ const AppRoutes: React.FC = () => {
   // Handle /logging route to toggle console logger
   React.useEffect(() => {
     if (location.pathname === '/logging') {
-      setShowLogger(prev => !prev);
+      setShowLogger((prev) => !prev);
       // Navigate back to previous route or chat if no previous route
       const previousPath = sessionStorage.getItem('previousPath') || '/chat';
       navigate(previousPath, { replace: true });
@@ -93,7 +93,7 @@ const AppRoutes: React.FC = () => {
         {/* Hidden route for logging toggle */}
         <Route path="/logging" element={null} />
       </Routes>
-      
+
       {/* Conditionally render Console Logger */}
       {showLogger && (
         <ConsoleLoggerErrorBoundary>
@@ -106,7 +106,7 @@ const AppRoutes: React.FC = () => {
 
 const ThemedApp: React.FC = () => {
   const { theme } = useThemeMode();
-  
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
