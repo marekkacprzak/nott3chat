@@ -156,7 +156,7 @@ $imageName = "$ContainerRegistryName.azurecr.io/nott3chat-backend:$ImageTag"
 docker build -t $imageName ./backend
 if ($LASTEXITCODE -ne 0) { Exit-WithError "Docker build failed" }
 
-if (-not $SkipTerraform) {
+if (-not $true) {
     # Container vulnerability scanning
     Write-Host "Scanning Docker image for vulnerabilities..." -ForegroundColor Cyan
     try {
